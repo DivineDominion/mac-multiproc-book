@@ -13,7 +13,8 @@ Outline
     * How popular app developers solve the problem
 * Part 2: Solving the problem
     * Preparing the Architecture
-    * Ports & Adapters-style solution
+    * Organizing the database
+    * Implementing the Processes
 * Part 3: Discussion
 * Appendix
     * Including interesting links, books, etc.

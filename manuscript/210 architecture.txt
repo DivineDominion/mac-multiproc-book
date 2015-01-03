@@ -1,0 +1,11 @@
+# Preparing the Architecture
+
+## A bit of Domain-driven Design Vocabulary Recap
+
+## Bounded Contexts
+
+## Aggregates
+
+## Rephrasing the problem: integrating Bounded Contexts
+
+## Sharing Data and Eventual Consistency

@@ -1,0 +1,21 @@
+-# Understanding the Problem: Why You Would Want to Separate Your App Into Processes
+
+# Motivation
+
+## Separating Concerns
+
+* multi-part app
+    * background process
+    * big UI, i.e. the main app
+    * helper UI, i.e. the menu bar app
+
+## Shared Data VS Inter-Process Communication
+
+* coming from a monolithic app approach: all processes should share data, but how do you accomplish this?
+    * shared static snapshot may lead to data anomalies due to multiple clients and concurrent access
+    * but maybe it's not so bad after all if the DBMS takes care of concurrency and we can make sure that changes take effect eventually
+
+# Various Inter-Process Communication Capabilities on the Mac
+
+## XPC
+

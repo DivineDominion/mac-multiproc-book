@@ -1,0 +1,10 @@
+# Organizing the Database
+
+* Shared database with Core Data and concurrent access
+    * You're locked into Core Data from then onward
+* What is Event Sourcing?
+* Use multiple data stores: separate reading from writing
+    * CQRS
+
+## Benefits and Drawbacks of Sharing a Core Data Store
+## Benefits and Drawbacks of Using Different Storage Mechanisms
