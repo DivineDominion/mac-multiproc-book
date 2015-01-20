@@ -1,3 +1,21 @@
+<!--
+
+       ___              _   _                                        
+      / __|_ _ ___ __ _| |_(_)_ _  __ _                              
+     | (__| '_/ -_) _` |  _| | ' \/ _` |                             
+      \___|_| \___\__,_|\__|_|_||_\__, |                             
+     |  \/  |_  _| | |_(_)___| _ \|___/__  __ ___ ______             
+     | |\/| | || | |  _| |___|  _/ '_/ _ \/ _/ -_|_-<_-<             
+     |_|  |_|\_,_|_|\__|_|   |_| |_| \___/\__\___/__/__/             
+     |  \/  |__ _ __    /_\  _ __ _ __| (_)__ __ _| |_(_)___ _ _  ___
+     | |\/| / _` / _|  / _ \| '_ \ '_ \ | / _/ _` |  _| / _ \ ' \(_-<
+     |_|  |_\__,_\__| /_/ \_\ .__/ .__/_|_\__\__,_|\__|_\___/_||_/__/
+                            |_|  |_|                                 
+
+                   by Christian Tietze, 2015
+
+-->
+
 Creating Multi-Process Mac Applications
 =======================================
 
@@ -13,8 +31,18 @@ Outline
     * How popular app developers solve the problem
 * Part 2: Solving the problem
     * Preparing the Architecture
+        - A bit of Domain-driven Design Vocabulary Recap
+        - Bounded Contexts
+        - Aggregates
+        - Rephrasing the problem: integrating Bounded Contexts
+        - Sharing Data and Eventual Consistency
     * Organizing the database
+        - Benefits and Drawbacks of Sharing a Core Data Store
+        - Benefits and Drawbacks of Using Different Storage Mechanisms
     * Implementing the Processes
+        - Bootstrapping a Multi-Process Xcode Project
+        - Test-Driving the XPC API
+        - Testing XPC Calls: Define Adapters
 * Part 3: Discussion
 * Appendix
     * Including interesting links, books, etc.

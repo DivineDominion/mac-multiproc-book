@@ -1,5 +1,72 @@
 # Implementing the Processes
 
 ## Bootstrapping a Multi-Process Xcode Project
+
+To create a Cocoa application is one thing. To mangle with build settings to create an app bundle with multiple components is another. I don't feel comfortable mangling with build settings still, but neither do I feel like a stranger there anymore. I don't know if that's a good sign. I'd rather have it work out of the box, but what can we do.
+
+Let me guide you through the process of creating a project from scratch and setting everything up so it'll actually work.
+
+### Keep Your Mac Developer Program's Team Identifier Handy
+
+If you are enrolled to the Mac Dev Program, you got your own "team identifier." You can find it online, in Apple's Developer Center. You'll need this for the setup.
+
+If you didn't shell out the bucks to get a license to code for Mac (yet), simply don't enable app sandboxing and don't fiddle with code signing, as both depend on valid registered developer profiles.
+
+### Create the Targets
+
+Create a new Xcode project and pick OS X "Cocoa Application". I use Swift and Core Data but no Storyboards.
+
+Add an XPC Service target right afterwards. We'll have to costimize the XPC Service target because nowadays it seems to work differently than people were used to. Call the future Launch Agent "Helper". We'll modify the names soon enough to make sense.
+
+Still under the "General" tab of the targets, select either Developer ID or Mac App Store signing. Using none will not work with sandboxing. But we will use sandboxing to make our app safe and future-proof and possibly App Store compatible.
+
+### App Capabilities: Set Up Proper Sandboxing 
+
+Enable Sandboxing for both the app and the XPC service target.
+
+Add an app group to let both processes communicate with each other. Pick an app group name of the form `<tem-id>.<organization>`. My organization identifier is `de.christiantietze`. I want the app components to share data, but not all apps created by me, so I want to limit the scope of the processes to the overall app group "multiproc" (for "multiple processes") for this project. My team ID is `FRMDA3XRGC`. The resulting app group I add to both targets will be `FRMDA3XRGC.de.christiantietze.multiproc`, accordingly.
+
+When you add an app group, it's important you're not fooled by the `$(TeamIdentifierPrefix)` variable, which is the default value. This variable will likely be `nil` during development and only cause you pain. Put your team identifier in there manually to make things work. Don't ask me why, but it's [the only way I got this running][ctde-appgroup] during development.
+
+Although the docs don't say it, I found the app group needs to be a substring of both target's bundle identifiers. The XPC Service is currently called `de.christiantietze.Helper`, which won't do. Rename both processes so that the bundle component `multiproc.` is in there.
+
+[ctde-appgroup]: http://christiantietze.de/posts/2015/01/xpc-helper-sandboxing-mac/
+
+### Make the XPC Service a Launch Agent
+
+Launch Agents have to be placed in the `.app` bundle's `Contents/Library/LoginItems` subfolder. Their name has to equal the bundle name. Launch Services will create the appropriate Mach-Service to connect to on our behalf this way.
+
+* Search for "Product Name" in the Helper's build settings tab and set it to `<team-id>.<bundle-name>`. In my case, this is: `FRMDA3XRGC.de.christiantietze.multiproc.Helper`.
+* Change the value of the "Wrapper Name" build setting to "app" instead of "xpc". Although the docs say Launch Agents may not end with `.app`, it didn't work for me.
+* Modify the XPC Sercvice's `.plist`: replace the value of "Bundle Identifier" with `$(PRODUCT_NAME)` only, no RFC escaping, no organization prefix. The RFC-escaped version would replace the bundle identifier's delimiting periods with dashes. That'd not be good.
+* Delete "Embed XPC Service" build phase. We're not just splitting an app into XPC components but want to create a Launch Agent and need to meet other criteria.
+* Add a copy file build phase. Destination: "Wrapper". Subpath: "Contents/Library/LoginItems". Drag and drop the helper target's product alias in there. (You find build products to your left in the Standard Editor's "related files" section below the "Products" group.)
+
+### Set the necessary entitlements
+
+<!--ct: TODO is this needed for the app as it is? (Currently not!)-->
+
+The client app targets have to have `com.apple.security.network.client` enabled to be able to communicate tho the XPC service. So check "Outgoing Connections (Client)" in the target's capabilites or add `com.apple.security.network.client` to the entitlements file with a Boolean value of "YES".
+
+![Enable Outgoing Connections](images/201501151630_sandbox-outgoing.png)
+
+### A Note on Maintaining the Launch Agent's Target
+
+When you install Launch Agents manually, you put them into `~/Library/LaunchServices/` and call `launchctl load`, followed by the file name. To stop using an Agent, you call `launchctl unload`, followed by the Agent's file name again.
+
+This doesn't work in our case since we automate launching the process and keep the file in our app bundle.
+
+To not only stop execution (which results in relaunching the Agent) but remove the Agent from the list (like `unload` does usually), you have to use the `remove` command. `launchctl remove` removes not by file name, but by service name. In my case, I stop and get rid of the helper process with the following command from the Terminal:
+
+{linenos=no}
+    launchctl remove FRMDA3XRGC.de.christiantietze.multiproc.Helper
+
+To make changes take effect after building a new version of the helper, `stop` will suffice to reload the service, though:
+
+{linenos=no}
+    launchctl stop FRMDA3XRGC.de.christiantietze.multiproc.Helper
+
+You can automate this with Xcode build scripts to get rid of the helper with every run. This is especially useful for the early development.
+
 ## Test-Driving the XPC API
 ## Testing XPC Calls: Define Adapters

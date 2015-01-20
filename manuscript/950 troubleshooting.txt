@@ -1,0 +1,18 @@
+# Troubleshooting
+
+## Code Signing
+
+### Which Profiles do I have to pick?
+### How Do I Code-Sign the Helper (Although Xcode Won't Let Me)?
+
+<!--ct: TODO is this necessary for deployment?-->
+
+![Checking Code Sign On Copy Impossible](images/201501201140_helper-code-sign.png)
+
+I couldn't check "Code Sign on Copy" in Xcode. Instead of a checkbox, I am presented with a text field.
+
+So I dug into Apple's example project's `.pbxproj` file and looked for the correct value. Ther'e a line looking like this:
+    
+    FRMDA3XRGC.de.christiantietze.multiproc.MultiProcCounterHelper.app in CopyFiles */ = {isa = PBXBuildFile; fileRef = 507D52F31A6D02C2008F44D1 /* FRMDA3XRGC.de.christiantietze.multiproc.MultiProcCounterHelper.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+    
+Change `ATTRIBUTES = (RemoveHeadersOnCopy, );` to `ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, );`. 

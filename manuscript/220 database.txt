@@ -2,9 +2,14 @@
 
 * Shared database with Core Data and concurrent access
     * You're locked into Core Data from then onward
+    * handle backgrounding via `jetsam`: remove file presenters; don't use NSFileCoordinator at all https://developer.apple.com/library/ios/technotes/tn2408/_index.html
 * What is Event Sourcing?
 * Use multiple data stores: separate reading from writing
     * CQRS
+
+## Data Storage Options
+
+* realm.io: does support access from multiple threads/queues, but doesn't support access in concurrent processes <http://realm.io/docs/cocoa/0.89.2/#realm-files-cannot-be-accessed-by-concurrent-processes>
 
 ## Benefits and Drawbacks of Sharing a Core Data Store
 ## Benefits and Drawbacks of Using Different Storage Mechanisms
