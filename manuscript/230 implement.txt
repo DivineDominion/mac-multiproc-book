@@ -42,14 +42,6 @@ Launch Agents have to be placed in the `.app` bundle's `Contents/Library/LoginIt
 * Delete "Embed XPC Service" build phase. We're not just splitting an app into XPC components but want to create a Launch Agent and need to meet other criteria.
 * Add a copy file build phase. Destination: "Wrapper". Subpath: "Contents/Library/LoginItems". Drag and drop the helper target's product alias in there. (You find build products to your left in the Standard Editor's "related files" section below the "Products" group.)
 
-### Set the necessary entitlements
-
-<!--ct: TODO is this needed for the app as it is? (Currently not!)-->
-
-The client app targets have to have `com.apple.security.network.client` enabled to be able to communicate tho the XPC service. So check "Outgoing Connections (Client)" in the target's capabilites or add `com.apple.security.network.client` to the entitlements file with a Boolean value of "YES".
-
-![Enable Outgoing Connections](images/201501151630_sandbox-outgoing.png)
-
 ### A Note on Maintaining the Launch Agent's Target
 
 When you install Launch Agents manually, you put them into `~/Library/LaunchServices/` and call `launchctl load`, followed by the file name. To stop using an Agent, you call `launchctl unload`, followed by the Agent's file name again.
