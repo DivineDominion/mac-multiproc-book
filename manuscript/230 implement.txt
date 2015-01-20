@@ -14,9 +14,13 @@ If you didn't shell out the bucks to get a license to code for Mac (yet), simply
 
 ### Create the Targets
 
+![New Project Settings](images/201501201655_create-project.png)
+
 Create a new Xcode project and pick OS X "Cocoa Application". I use Swift and Core Data but no Storyboards.
 
-Add an XPC Service target right afterwards. We'll have to costimize the XPC Service target because nowadays it seems to work differently than people were used to. Call the future Launch Agent "Helper". We'll modify the names soon enough to make sense.
+Add an XPC Service target right afterwards. You find them under "Frameworks & Library" in the OS X group as of Xcode 6. We'll have to costimize the XPC Service target because nowadays it seems to work differently than people were used to. Call the future Launch Agent "Helper". We'll modify the names soon enough to make sense.
+
+![Add the Helper Target](images/201501201656_create-helper-target.png)
 
 Still under the "General" tab of the targets, select either Developer ID or Mac App Store signing. Using none will not work with sandboxing. But we will use sandboxing to make our app safe and future-proof and possibly App Store compatible.
 
@@ -25,6 +29,8 @@ Still under the "General" tab of the targets, select either Developer ID or Mac 
 Enable Sandboxing for both the app and the XPC service target.
 
 Add an app group to let both processes communicate with each other. Pick an app group name of the form `<tem-id>.<organization>`. My organization identifier is `de.christiantietze`. I want the app components to share data, but not all apps created by me, so I want to limit the scope of the processes to the overall app group "multiproc" (for "multiple processes") for this project. My team ID is `FRMDA3XRGC`. The resulting app group I add to both targets will be `FRMDA3XRGC.de.christiantietze.multiproc`, accordingly.
+
+![Add App Group](images/201501201701_app-groups.png)
 
 When you add an app group, it's important you're not fooled by the `$(TeamIdentifierPrefix)` variable, which is the default value. This variable will likely be `nil` during development and only cause you pain. Put your team identifier in there manually to make things work. Don't ask me why, but it's [the only way I got this running][ctde-appgroup] during development.
 
