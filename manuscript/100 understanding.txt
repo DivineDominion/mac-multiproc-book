@@ -19,3 +19,25 @@
 
 ## XPC
 
+### Launch Services Restrictions
+
+You can't run XPC helper apps until the app meets certain criteria. [Apple says it pretty clear][launchserv]: 
+
+> * Both the app and helper pass the Gatekeeper assessment. By default that means both are signed by the Mac App Store or with a Developer ID.
+>     
+>     > Note: This does not include your development ("Mac Developer") or distribution ("3rd Party Mac Developer Application") signing identities.
+>
+> * The app is installed in /Applications and the app bundle and all contents are owned by root.
+> * The helper has been (manually) run at least once by the user.
+
+If you download apps from the Mac App Store, they reside in `/Applications` and are owned by root. Passing the Gatekeeper assessment is a must in this case anyway. If you distribute outside the Mac App Store, though, you have to pay even closer attention to the other two.
+
+Check your app's Gatekeeper assessment with the following command:
+
+{linenos=no}
+    spctl --assess -vvvv /path/to/your/application.app
+    spctl --assess -vvvv /path/to/your/application.app/or/helper.app
+
+During development, you will probably run into issues with code signing. We will look into this when we [bootstrap the project](#bootstrap).
+
+[launchserv]: https://developer.apple.com/library/mac/documentation/Security/Conceptual/AppSandboxDesignGuide/AppSandboxInDepth/AppSandboxInDepth.html#//apple_ref/doc/uid/TP40011183-CH3-SW29 "Launching Helpers with Launch Services"

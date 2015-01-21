@@ -1,6 +1,6 @@
 # Implementing the Processes
 
-## Bootstrapping a Multi-Process Xcode Project
+## Bootstrapping a Multi-Process Xcode Project {#bootstrap}
 
 To create a Cocoa application is one thing. To mangle with build settings to create an app bundle with multiple components is another. I don't feel comfortable mangling with build settings still, but neither do I feel like a stranger there anymore. I don't know if that's a good sign. I'd rather have it work out of the box, but what can we do.
 
@@ -32,11 +32,14 @@ Add an app group to let both processes communicate with each other. Pick an app 
 
 ![Add App Group](images/201501201701_app-groups.png)
 
-When you add an app group, it's important you're not fooled by the `$(TeamIdentifierPrefix)` variable, which is the default value. This variable will likely be `nil` during development and only cause you pain. Put your team identifier in there manually to make things work. Don't ask me why, but it's [the only way I got this running][ctde-appgroup] during development.
+When you add an app group, it's important you're not fooled by the `$(TeamIdentifierPrefix)` variable, which is the default value. This variable will likely [be `nil` during development][teamidnil]. That should be okay when you write XPC helper processes which are launched by the app itself on demand.[^helperex] But it only causes you pain when you work with login items and try to connect to a system-wide Mach-Service. Put your team identifier in there manually to make things work during development. Don't ask me why, but it's [the only way I got this running][ctde-appgroup] during development.
 
 Although the docs don't say it, I found the app group needs to be a substring of both target's bundle identifiers. The XPC Service is currently called `de.christiantietze.Helper`, which won't do. Rename both processes so that the bundle component `multiproc.` is in there.
 
+[teamidnil]: http://stackoverflow.com/a/13180926/1460929
 [ctde-appgroup]: http://christiantietze.de/posts/2015/01/xpc-helper-sandboxing-mac/
+
+[^helperex]: If you are interested in leveraging XPC to put heavy work into helper processes and take the load from your main application, the online periodical objc.io #14 features [a very good article about XPC helper services](http://www.objc.io/issue-14/xpc.html) for you.
 
 ### Make the XPC Service a Launch Agent
 
