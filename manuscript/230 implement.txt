@@ -71,3 +71,7 @@ You can automate this with Xcode build scripts to get rid of the helper with eve
 
 ## Test-Driving the XPC API
 ## Testing XPC Calls: Define Adapters
+## Dealing with crashes
+* Launch Services takes care of restarting the helper
+* add a lock-like token to find out if it crashed or if it was quit on purpose
+* inform the user from the UI processes (background status item, or main app)
