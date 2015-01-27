@@ -24,6 +24,8 @@ Add an XPC Service target right afterwards. You find them under "Frameworks & Li
 
 Still under the "General" tab of the targets, select either Developer ID or Mac App Store signing. Using none will not work with sandboxing. But we will use sandboxing to make our app safe and future-proof and possibly App Store compatible.
 
+Note that the XPC service target or helper target is Objective-C instead of Swift. Maybe there's a reason for it, but I wouldn't know which. We'll get it running first and translate to Swift later.
+
 ### App Capabilities: Set Up Proper Sandboxing 
 
 Enable Sandboxing for both the app and the XPC service target.
@@ -69,7 +71,258 @@ To make changes take effect after building a new version of the helper, `stop` w
 
 You can automate this with Xcode build scripts to get rid of the helper with every run. This is especially useful for the early development.
 
-## Test-Driving the XPC API
+## Implement a communication API
+
+By now, both app targets should compile. They don't do anything, though. You should be able to invoke the helper application manually, too. Now let's add means to make the main app start the helper if it isn't running.
+
+I will guide you through the process of creating your own interacting processes from scratch in this section.
+
+If you want to have a look at the outcome of this only and find the step-by-step guide too long, just download the [demo app's code after the adaptation from GitHub]201501221730github and look at the result. See you in [the next section](#sec:testdriveapi)!
+
+
+### Define a shared protocol
+
+To set up the `NSXPCConnection`, we need to supply a protocol to communicate with the helper by proxy.
+
+I like to give protocols names which state capabilities. Instead of `XPCHelperProtocol` or something I am going to use `ProvidesCounts` for now:
+
+{linenos=no}
+    @protocol ProvidesCounts
+    - (void)currentCountWithReply:(void (^)(NSUInteger))reply;
+    @end
+
+I put `ProvidesCounts.h` into a source file group called "Shared Sources" at root level. Both targets will use this.
+
+The helper's target, being Objective-C anyway, can simply import the file.
+
+The Swift target, though, needs bridging headers. They are used to import Objective-C stuff into the Swift module. Create a file called `<app-product-name>-Bridging-Header.h` in the Swift app module. In my case, this is called `MultiProcCounter-Bridging-Header.h`, with "MultiProcCounter" being the target's and the bundle's name. Next, modify this target's build settings. Search for "bridging headers" and set "Objective-C Bridging Headers" of the product to `<product-path>/<product-name>-Bridging-Header.h`. In my case, this is `MultiProcCounter/MultiProcCounter-Bridging-Header.h`. The path is relative to the group. Usually, the folder is called the same as the product/target when you create it. Now, import the protocol in this bridging header:
+
+{linenos=no}
+    #import "ProvidesCounts.h"
+
+That's it for the Swift-based target.
+
+The helper's template includes the `Agent` protocol which we don't need anymore. The sample helper object, mine is called `MultiProcCounterHelper`, just like the service's target, has to implement `ProvidesCounts` instead.
+
+    // MultiProcCounterHelper.h
+    @interface MultiProcCounterHelper : NSObject <ProvidesCounts>
+    @end
+
+    // MultiProcCounterHelper.m
+    @implementation MultiProcCounterHelper
+    - (void)currentCountWithReply:(void (^)(NSUInteger))reply
+    {
+        reply(1337);
+    }
+    @end
+
+Replacing the `Agent` protocol with `ProvidesCounts` in the helper's `main.m` where necessary, we end up with a `ServiceDelegate` which actually becomes the listener for XPC connections:
+
+    // main.m
+    @interface ServiceDelegate : NSObject <NSXPCListenerDelegate>
+    @end
+
+    @implementation ServiceDelegate
+    - (BOOL)listener:(NSXPCListener *)listener shouldAcceptNewConnection:(NSXPCConnection *)newConnection {
+        newConnection.exportedInterface = [NSXPCInterface interfaceWithProtocol:@protocol(ProvidesCounts)];
+        MultiProcCounterHelper *exportedObject = [MultiProcCounterHelper new];
+        newConnection.exportedObject = exportedObject;
+        [newConnection resume];
+    
+        return YES;
+    }
+    @end
+
+### Make use of the shared protocol
+
+Now tweak `AppDelegate` to connect to the helper and obtain a value. The client application will set up the connection like this:
+
+{title='Listing 1.1: AppDelegate.swift using NSXPCConnection'}
+    @NSApplicationMain
+    class AppDelegate: NSObject, NSApplicationDelegate {
+
+        @IBOutlet weak var window: NSWindow!
+        var helper: ProvidesCounts?
+
+        func applicationDidFinishLaunching(aNotification: NSNotification) {
+            var error: NSError?
+            // I'll show you what createXPCConnection() looks like in a moment.
+            let maybeConnection = createXPCConnection("FRMDA3XRGC.de.christiantietze.multiproc.Helper.app", &error)
+            if (maybeConnection == nil) {
+                NSLog("connection failed %@", error!.description)
+                return
+            }
+            let connection = maybeConnection!
+        
+            connection.remoteObjectInterface = NSXPCInterface(`protocol`: ProvidesCounts.self)
+            connection.resume()
+        
+            helper = connection.remoteObjectProxyWithErrorHandler() { (err) -> Void in
+                NSLog("Failed to send message: %@\n\n", err.description)
+            } as? ProvidesCounts
+        
+            if helper == nil {
+                NSLog("No helper")
+            }
+        
+            helper!.currentCountWithReply() { (result) -> Void in
+                NSLog("The result is: \(result)")
+            }
+        }
+    }
+
+There's a lot of `NSLog`ging going on for now. Of course this is going to be replaced by real error-handling mechanisms. You should be aware of the possible points of failure: starting up the service may fail. Or it starts up but the XPC connection doesn't work and you don't get a proxy object. Or you get a proxy object, but sending the message fails because the service crashes in between.
+<!--ct: TODO when do you not get a remoteObjectProxyWithErrorHandler()? Outdated versions?-->
+
+### XPC connection factory
+
+I used a little helper method here, `createXPCConnection()`, which takes the file name of the helper app. I adapted it from Apple's own demo code [AppSandboxLoginItemXPCDemo][xpcdemo]. Instead of extending `NSXPCConnection` and supplying a new convenience initializer, I used a factory function here. Mostly because the initializer wouldn't compile for reason I cannot fathom.
+
+    func createXPCConnection(loginItemName: NSString, error: NSErrorPointer) -> NSXPCConnection? {
+        let mainBundleURL = NSBundle.mainBundle().bundleURL
+        let loginItemDirURL = mainBundleURL.URLByAppendingPathComponent("Contents/Library/LoginItems", isDirectory: true)
+        let loginItemURL = loginItemDirURL.URLByAppendingPathComponent(loginItemName)
+    
+        return createXPCConnection(loginItemURL, error)
+    }
+
+The actual factory called here takes a URL instead of a file name.
+
+{title='Listing 1.2: createXPCConnection() factory'}
+    // Since Swift doesn't care about ancient Boolean types, create convenience
+    // constants for later. (SMLoginItemSetEnabled will need these.)
+    let TRUE: Boolean = 1 as Boolean
+    let FALSE: Boolean = 0 as Boolean
+    
+    func createXPCConnection(loginItemURL: NSURL, error: NSErrorPointer) -> NSXPCConnection? {
+        let loginItemBundle = NSBundle(URL: loginItemURL)
+    
+        if loginItemBundle == nil { // ❶
+            // populate error pointer ...
+            return nil
+        }
+    
+        if loginItemBundle!.bundleIdentifier? == nil { // ❷
+            // populate error pointer ...
+            return nil
+        }
+        let loginItemBundleId = loginItemBundle!.bundleIdentifier!
+    
+        let loginItemBaseName = loginItemURL.lastPathComponent!.stringByDeletingPathExtension
+        if loginItemBundleId != loginItemBaseName { // ❸
+            // populate error pointer ...
+            return nil
+        }
+    
+        if SMLoginItemSetEnabled(loginItemBundleId as CFString, TRUE) != TRUE { // ❹
+            // populate error pointer ...
+            return nil
+        }
+    
+        return NSXPCConnection(machServiceName: loginItemBundleId, options: NSXPCConnectionOptions(0))
+    }
+
+1. Load the bundle at the specified URL.
+2. Lookup the bundle identifier for the login item. LaunchServices implicitly registers a mach service for the login item whose name is the name as the login item's bundle identifier.
+3. The login item's file name must match its bundle Id.
+4. Enable the login item. This will start it running if it wasn't already running.
+
+If all of this works, we get an XPC connection.
+
+That's a lot of checks and a lot of things which can go wrong. Good news is: all of these are programmer errors. If you distribute the app properly, they won't surprisingly happen in the wild.
+
+[xpcdemo]: https://developer.apple.com/library/mac/samplecode/AppSandboxLoginItemXPCDemo/Introduction/Intro.html
+
+
+### Getting rid of Objective-C code in favor of Swift
+
+The XPC service target's code is in Objective-C by default. I don't know why, though. [Other folks][adf-swift] on the Apple Developer Forums use Swift for their XPC service without issues, and so will we. 
+
+Here's what you have to do to get rid of Objective-C code altogether:
+
+* Set "Embedded Content Contains Swift Code" in the helper's build settings to "YES" to use Swift in the first place.
+* Delete all `.h` and `.m` files, including the shared protocol and bridging headers.
+* Add a `HelperServices.swift` file which will contain the shared protocol. Both the app and the helper target need to use this. See listing 1.3 below.[^namespaces]
+* Add a `main.swift` file to the helper with the code of the listing 1.4 below.
+* Compile and run and rejoice.
+
+{title='Listing 1.3: HelperServices.swift'}
+    import Foundation
+
+    @objc(ProvidesCounts)
+    protocol ProvidesCounts {
+        func currentCount(reply: ((UInt) -> Void)!)
+    }
+
+
+{title='Listing 1.4: main.swift (in XPC Service's Target)'}
+
+    import Cocoa
+
+    class TheHelper : NSObject, ProvidesCounts {
+        func currentCount(reply: ((UInt) -> Void)!) {
+            reply(4455)
+        }
+    }
+
+    class ServiceDelegate : NSObject, NSXPCListenerDelegate {
+        func listener(listener: NSXPCListener!, shouldAcceptNewConnection newConnection: NSXPCConnection!) -> Bool {
+            newConnection.exportedInterface = NSXPCInterface(`protocol`: ProvidesCounts.self)
+            var exportedObject = TheHelper()
+            newConnection.exportedObject = exportedObject
+            newConnection.resume()
+            return true
+        }
+    }
+
+    let bundleId = NSBundle.mainBundle().bundleIdentifier!
+    let delegate = ServiceDelegate()
+    let listener = NSXPCListener(machServiceName: bundleId)
+    listener.delegate = delegate;
+    listener.resume()
+    NSRunLoop.currentRunLoop().run()
+
+I like the Swift version better, mainly because the code is a lot more terse for what it accomplishes.
+
+[^namespaces]: It'd be cool if you could easily create Swift modules as namespaces to share code. But creating a `.swiftmodule` manually [takes too many steps](http://railsware.com/blog/2014/06/26/creation-of-pure-swift-module/) to pay off for sharing a single protocol between two targets.
+
+[adf-swift]: https://devforums.apple.com/message/1092054#1092054
+
+### Recap
+
+When the project is prepared, you need to perform the following steps in code to get the XPC service up and running and have the client app connect to it:
+
+* Define a protocol to use on both sides: the XPC service has to provide an object which implements the protocol while the client uses the proxy object. I called this protocol `ProvidesCounts`.
+* Add bridging headers to Swift targets to make the protocol available there.
+* Expose the object which implements the protocol in the `NSXPCListener` implementation, here in `ServiceDelegate`. Use `NSXPCInterface`'s `exportedObject` property for this.
+* On the client side, start the XPC service as a login item via `SMLoginItemSetEnabled()`.
+* Then obtain the result of the connection's `remoteObjectProxyWithErrorHandler()`, cast it to your shared protocol, here `ProvidesCounts`, and use it like any other object.
+
+Run the app and see what happens. In my case, it prints the number to the console as expected. Congratulations! This was a lot of effort for not very much. But from now on, we can roll quickly and add real application logic.
+
+If you didn't follow along in your code, check out the demo app [with changes this far][201501221730github].
+
+[201501221730github]: https://github.com/DivineDominion/mac-multiproc-code/tree/001-xpc-bootstrapping
+
+## Test-Driving the XPC API {#sec:testdriveapi}
+
+### Remove the old Helper process automatically with every build during initial development
+
+When you get started with developing the processes, it's going to get on your nerves to manually shut down or restart the background process all the time. Instead, add a script to your build phases to stop the process on every build.
+
+<!--ct: TODO add listing name: "Remove old Helper Script Build Phase"-->
+{linenos=no}
+    if launchctl list | grep de.christiantietze.multiproc; then
+        echo "Removing Helper…"
+        launchctl remove FRMDA3XRGC.de.christiantietze.multiproc.Helper
+    else
+        echo "No Helper was Running."
+    fi
+
+This is not what you are going to want later on, but it'll suffice to get past the initial trouble. To restart or shut down the helper manually, you can create an Automator service to execute this script and add a shortcut to it. Or you use a script launcher like Keyboard Maestro.
+
+By all means: do yourself a favor and don't use the Terminal directly everytime.
+
 ## Testing XPC Calls: Define Adapters
 ## Dealing with crashes
 * Launch Services takes care of restarting the helper
