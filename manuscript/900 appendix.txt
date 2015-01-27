@@ -1,0 +1,88 @@
+-# Appendix
+
+# Interesting Stuff
+## Resources on the Web
+## Books I Recommend
+
+
+# Principles of Development
+
+## Model--View--View Model (MVVM) Primer
+
+There's your core _domain model_. Around it, you build an application with its interface. The user interface is called _view_. So far, so similar to MVC.
+
+Now an MVC controller will usually have access to the model data and the view, or the view will be bound to the model and update itself automatically on model changes. The latter is sometimes called _smart view pattern_. As we'll see, I don't like either of that. A basic Domain-Driven Design principle I adhere to is this: domain objects should not bleed into other layers of the application. At least not if they're mutable, that is, if they're Aggregates. You can argue that read-only entities would do no harm, but I yet have to come across something like this.
+
+To get any data into the view, MVVM introduces the _view model_ or [_presentation model_][presmodel]. Application of this pattern vary, but they all have in common that the view model is a container for the data of the domain model. The domain model is thus shielded from the user interface. I came to think that the view model is "a model for the view", but people repeatedly say it's a "model of the view" instead. Depending on your interpretation, how you apply the pattern will vary of course.
+
+* Dumb Data-Transfer Objects are "a model for the view". The view takes the data, works with it, and displays it somehow.
+* Presenters, however, model what the view can do. They become "a model of the view." They take care of assembling data suited to the view's needs.
+
+In the Ruby on Rails world, the presenter has become a service object which holds on to the domain model and exposes its data in a way meaningful to the view. Say you've got a `Person` entity with `firstName` and `lastName`. A `PersonPresenter` will take care of assembling a `fullName`, to display a list of `Person`s, for example. You can go all nuts here: create a `PersonListPresenter` for displaying full names in a list, and a `PersonFormPresenter` for exposing both first and last name to edit them in a form, say. This way, the view can be as dumb as possible. That's a case of preparing "a model for the view." After all, you pass the presenter in, so it becomes the view's model.
+
+I learned to think about it from a different perspective.
+
+Adhering to dependency inversion, the concrete presenter is indeed injected into the view. Its interface is specified by means of the view component arrangement, though. If the view displays the full name of a person, the presenter's interface will codify this requirement as `fullName() -> String`. This way, the view is responsible for specifying its data provider's capabilities while it depends on some other service to provide an actual implementation. The concrete presenter is created outside the view layer.
+
+Your client code doesn't need to know what the view does or which components it's made of. It only needs to understand the presenter's interface. The presenter in this case is a model _of_ the view: it doesn't care about the Domain Model. It only cares about the view's specification. 
+
+Change the properties on this _model of the view_ to update the UI. A presenter hides away the complexity of the user interface. To the client code, the rest happens magically.
+
+[presmodel]: http://martinfowler.com/eaaDev/PresentationModel.html
+
+
+## East-Oriented Code {#east}
+
+<!--ct: 201412250933 east oriented code-->
+
+You may have heard of the ["Tell, Don't Ask" Principle](https://pragprog.com/articles/tell-dont-ask). Rephrased, it means you should focus on _commands_ and get rid of as much information _queries_ as possible. (We will encounter Command--Query Separation in various forms throughout this book.)
+<!--ct: TODO add section about CQRS as a central hub of information-->
+
+James Ladd (@jamesladd) coined the phrase "East-Oriented Code". Where "Tell, Don't Ask" opens up to ambiguity at first, the principle of "East-Oriented Code" doesn't. It says that all your information should travel eastward, to the right, that is, no information should flow to the _left_ as you read your code.[^east]
+
+  [^east]: James has posts on the topic on [his blog](http://jamesladdcode.com/category/its-all-about-writing-software/). So has Stephen Haberman written [about writer objects instead of getters](http://www.draconianoverlord.com/2013/04/12/east-oriented-programming.html). You may want to watch [a Ruby video](http://confreaks.com/videos/4825-RubyConf2014-eastward-ho-a-clear-path-through-ruby-with-oo) on the topic for good examples.
+
+Take a look at an example of mixed-up information flow:
+
+{linenos=off}
+    let fullName: String = person.fullName
+    theDisplay.nameLabel!.text = fullName
+
+Here, `person.fullName` clearly is a query. Setting the text of the display's label is bound to a query, too. For the dramatic effect, I made it so that we even have to unwrap the optional `nameLabel`. Setting the text is actually a command. But `theDisplay.nameLabel!` is a query, too. And a complicated one, even.
+
+[Sandi Metz](http://www.sandimetz.com/blog/2014/12/19/suspicions-of-nil) summarizes the problem of optionals (or `nil` objects in other languages than Swift) like this: `nil` makes you return "objects which conform to different API's". In Ruby, this is even more apparent, because a `nil` object responds to some methods. In Objective-C, it responds to everything and fails silently. In Swift, we have to deal with runtime errors. It's more verbose, and I think it's a good idea to not allow to return `nil` whenever possible because we have to deal with two types of things instead of one.
+
+Making your code "East-Oriented" means you should at least get rid of queries. Don't ask for information or view components -- tell your objects to perform changes instead:
+
+{linenos=off}
+    person.displayName(theDisplay)
+
+Now `person` may hide its `fullName` from the outside, because you shouldn't query it anyway. Internally, it could do this:
+
+{linenos=off}
+    func displayName(aDisplay: DisplaysNames) -> Person {
+        let data = ["firstName" : firstName, "lastName" : lastName]
+        aDisplay.displayName(data)
+        
+        return self
+    }
+
+The `DisplaysNames` protocol can specify alternate `displayName` methods which accepts more than a single data parameter instead. But then `Person` would have to know about this, and passing initials or middle names will require different methods instead of different keys in the data container. I like the flexibility of this approach to illustrate the principle.
+
+Also worth noting is that I suddenly return the `Person` object's instance. Shouldn't a command be of return type `Void`?
+
+According to one accompanying convention of the "East-Oriented Code" principle, we should `return self` in commands in order to chain them:
+
+{linenos=off}
+    person.displayName(theDisplay)
+        .storeShoppingCart(theCartHandler)
+        .issueRefunds()
+
+[James' principles](http://jamesladdcode.com/?p=302) in a nutshell:
+
+> 1. All **public** methods should be void, boolean or return a reference to the current object (this in Java).
+> 2. Objects that implement the Factory or Builder pattern or similar are an exception.
+> 3. East is better suited to composite objects, not primitive objects.
+
+You don't have to make your code chainable, of course. If returning `self` causes problems or breaks your tests, though, your code isn't ready for focussing on a command-centric approach. This should become a driver of change towards useful refactorings.
+
