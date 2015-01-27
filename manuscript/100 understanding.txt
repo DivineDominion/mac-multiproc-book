@@ -118,6 +118,34 @@ I encourage a server--client relationship in this case, with the background proc
 
 ## XPC
 
+### `NSXPCConnection`
+
+We are going to deal with `NSXPCConnection`. That's the tunnel between processes. It has to be set up in both directions for communication with a shared interface. `NSXPCConnection` will then provide proxy objects which do the XPC communicating on our behalf. This means we end up using plain old Cocoa objects on both ends and the `NSXPCConnection` takes care of the rest.
+
+There are limitations, though. The XPC library works with the following primitive types:[^nshipsterxpc]
+
+* Data
+* Boolean
+* Double
+* String
+* Signed Integer
+* Unsigned Integer
+* Date
+* UUID
+* Array
+* Dictionary
+* Null
+
+To send custom objects across the connection, they have to conform to `NSSecureCoding`. We'll get to that later. Apple's documentation has [sufficient instructions][customobj] if you're interested. Objects are going to be copied by default. You can make them be passed by proxy instead, too, so both processes share the same instance. 
+<!--ct: TODO link to when "later" is-->
+
+I think it is really crazy that this is possible.
+
+
+[^nshipsterxpc]: Mattt Thompson assembled this list [on NSHipster](nshipster.com/inter-process-communication/).
+
+[customobj]: https://developer.apple.com/library/mac/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingXPCServices.html#//apple_ref/doc/uid/10000172i-SW6-SW7 "Daemons and Services Programming Guide"
+
 ### Launch Services Restrictions
 
 You can't run XPC helper apps until the app meets certain criteria. [Apple says it pretty clear][launchserv]: 
