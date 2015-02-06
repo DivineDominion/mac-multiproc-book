@@ -1,0 +1,63 @@
+# The Example Application: Relocation Manager
+
+In my last book, _Exploring Mac App Development Strategies_, I used the boring example of managing a list of boxes which may contain items.
+
+In this book, I have prepared a more interesting example: manage a list of boxes _with limited capacity_ which may contain items. The twist? Items will be distributed evenly accross existing boxes.
+
+Still sounds boring?
+
+What about this: together, we will develop "Relocation Manager", a tool which helps using your cardboard boxes efficiently when you are going to move to a new place. Efficiency is measured by the load you have to carry with each box. No one likes to carry a lot. A possible marketing-ready catchphrase could be: "Preserve a healthy back and your sanity: plan your next move with _Relocation Manager_ and never put too much into a single box again, ever!" For a future version, Relocation Manager should take into account the actual size and weight of items. To get a [Minimum Viable Product][mvp] out quickly, though, it's enough to assume the same size for all items, and that they stack equally well, no matter if you add "whale" or "egg" to it.
+[^irony]
+
+The Relocation Manager will have all modern Mac app's bells and whistles:
+
+* The user can use a **menu bar widget** to see at a glimpse how much total capacity she has left. It'll also help obtain new boxes for planning.
+* The **distribution manager** provides a detailed overview of all boxes and their contents.
+* Behind the scenes, we'll make use of a **background service** to manage the data in an asynchronous task.
+
+[^irony]: I'm not totally serious about the app here. Just so both of us know this.
+
+[mvp]: http://en.wikipedia.org/wiki/Minimum_viable_product
+
+## Planning the app
+
+The thing this book should tell you is how to write XPC services to create robust applications.
+
+We won't start with XPC right away, though, because that's not how real-world app design works. It's easy to get any XPC communication up and running once you know the pitfalls. It's something else to _design_ the communication between real-world application components. I think it's best to develop and test the parts in isolation _after defining the XPC interfaces_, and make them interact afterwards. Fingers crossed, this should just work if we take the matter seriously and design each component for asynchronous interaction. That's why I won't jump into XPC sample code right away.
+
+Instead of just hacking XPC services together, we'll figure out the exact requirements of the application first. In the next part, we'll take into consideration [the architecture of the app](#architecture). Then we'll code.
+
+To design an application well, it doesn't help to just pretend we know what we're going to do. This is an authentic book. So let's figure out what the components of the app need from a very high-level perspective.
+
+### User interaction stories
+
+Here's a brief summary of the interaction we are going to aim for. I have italicized key terms which will be part of our **Ubiquituous Language**. That's our own project-scope lingo. It'll determine the name of methods and **Entities** in our code.
+
+Most of the time, only the menu bar widget will be active. The user won't have the manager app open all the time. Upon activation, the widget will show the _total capacity_ of all existing _boxes_.
+
+<!--ct: TODO add sketches of menu bar widget: free space VS full-->
+
+If there's room for one or more _items_, the widget will offer a quick-entry panel to _add_ a new item to the _set of boxes_. If there's no _capacity_ left, though, a warning is presented, issuing the user to open the manager and _order_ new boxes.
+
+<!--ct: TODO add sketches of main list-->
+In the manager app, the user can see the list of existing boxes and their contents. The user may _assign_ labels to boxes. She can also _remove_ items at will. She can _remove_ boxes only if they're empty or the contents can be distributed accross leftover boxes.
+
+<!--ct: TODO add sketch of box-add dialog-->
+The user can _order_ more boxes at will, specifying the optional label and capacity of the box. Boxes come in sizes to carry 5, 10, or 30 items.
+
+<!--ct: TODO add sketch of item-add dialog-->
+From the manager app, the user can also _add_ items directly if there's room in one of the remaining boxes. If there isn't, the action is inavailable. Also, the user is presented with a note, indicating that new boxes have to be ordered.
+
+### Informal Model of the Domain
+
+<!--ct: TODO create diagram of the model-->
+
+We are dealing with **boxes** and **items**. Boxes have a **capacity** and may have a **label**. Items have **names**. For technical reasons, both will need unique **identifiers**, but that's nothing the user will ever have to worry about.
+
+Every item may appear only once. If the user has two items with the same name, the system will represent this as exactly that: two **Entities** with the same name, incidentally.
+
+A lot of the business rules are stated in the last section already, like how removing non-empty boxes should be handled. I won't repeat them here. They will be important later.
+
+Notice that we decided early-on none of the user-facing components manage data directly. They access the shared data store via the background service only. This isn't a demand-driven decision. It's part of the requirement for this book. Examples _have_ to be lacking one way or another. I favor sensible features in this case.
+
+So, both the menu bar widget and the manager app don't need to know much about the domain model. Still, they are most important for the user. We'll start 

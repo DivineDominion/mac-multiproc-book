@@ -1,1 +1,5 @@
 -# Introduction
+
+## Reading the book
+
+* uppercase denotes a pattern name; first time appearance is emboldened. Examples: **Entity**, Repository, Ubiquituous Language, **Factory**, Value Object.

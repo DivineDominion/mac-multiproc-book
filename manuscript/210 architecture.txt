@@ -1,12 +1,13 @@
-# Preparing the Architecture
+# Preparing the Architecture {#architecture}
 
 ## A bit of Domain-driven Design Vocabulary Recap
 
 ## Bounded Contexts
 
-## Aggregates
+* the app has one context only
+* multiple contexts would exist if we talked about different facets of a thing, or about different things altogether, but here, we are working with the same vocabulary
 
-## Rephrasing the problem: integrating Bounded Contexts
+## Aggregates
 
 ## Sharing Data and Eventual Consistency
 
