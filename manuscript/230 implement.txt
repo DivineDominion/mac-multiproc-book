@@ -306,6 +306,12 @@ If you didn't follow along in your code, check out the demo app [with changes th
 
 ## Test-Driving the XPC API {#sec:testdriveapi}
 
+### Make the connection bi-directional
+### Handle connection interruptions
+
+> You’ll typically have interruption handlers in your application and invalidation handlers in you xpc service.
+> http://blog.yvs.eu.com/2013/07/cocoa-interprocess-communication-with-xpc/
+
 ### Remove the old Helper process automatically with every build during initial development
 
 When you get started with developing the processes, it's going to get on your nerves to manually shut down or restart the background process all the time. Instead, add a script to your build phases to stop the process on every build.
@@ -324,6 +330,7 @@ This is not what you are going to want later on, but it'll suffice to get past t
 By all means: do yourself a favor and don't use the Terminal directly everytime.
 
 ## Testing XPC Calls: Define Adapters
+
 ## Dealing with crashes
 * Launch Services takes care of restarting the helper
 * add a lock-like token to find out if it crashed or if it was quit on purpose

@@ -9,3 +9,14 @@
 ## Rephrasing the problem: integrating Bounded Contexts
 
 ## Sharing Data and Eventual Consistency
+
+## Design for concurrency
+
+### Don't expect immediate responses
+
+* calls accross the XPC connection should be non-blocking
+    * the app should stay responsive to user interaction
+    * the helper should stay responsive to further requests
+* favor commands and react to callbacks, taking a delay into account
+    * instead of asking the helper for a BoxId to create stuff on the client side, command it to create a Box and wait for the response
+    * if you want to give immediate feedback to the user, create a temporary view component and command the service to create a Box for a given temporary identifier and incorporate the changes later (isn't this much like a real identifier already? only benefit: it's vended this side of the connection)
