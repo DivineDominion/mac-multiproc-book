@@ -29,7 +29,7 @@ Instead of just hacking XPC services together, we'll figure out the exact requir
 
 To design an application well, it doesn't help to just pretend we know what we're going to do. This is an authentic book. So let's figure out what the components of the app need from a very high-level perspective.
 
-### User interaction stories
+## User interaction stories
 
 Here's a brief summary of the interaction we are going to aim for. I have italicized key terms which will be part of our **Ubiquituous Language**. That's our own project-scope lingo. It'll determine the name of methods and **Entities** in our code.
 
@@ -48,16 +48,18 @@ The user can _order_ more boxes at will, specifying the optional label and capac
 <!--ct: TODO add sketch of item-add dialog-->
 From the manager app, the user can also _add_ items directly if there's room in one of the remaining boxes. If there isn't, the action is inavailable. Also, the user is presented with a note, indicating that new boxes have to be ordered.
 
-### Informal Model of the Domain
+## Informal Model of the Domain
 
 <!--ct: TODO create diagram of the model-->
 
-We are dealing with **boxes** and **items**. Boxes have a **capacity** and may have a **label**. Items have **names**. For technical reasons, both will need unique **identifiers**, but that's nothing the user will ever have to worry about.
+What kind of things do we have? We are dealing with **boxes** and **items**. Boxes have a **capacity** and may have a **label**. Items have **names**.
 
-Every item may appear only once. If the user has two items with the same name, the system will represent this as exactly that: two **Entities** with the same name, incidentally.
+Every item may appear only once. If the user has two items with the same name, the system will represent this as exactly that: two **Entities** with the same name. For technical reasons, boxes and items will need unique **identifiers** to make them Entities, but that's nothing the user will ever have to worry about.
 
-A lot of the business rules are stated in the last section already, like how removing non-empty boxes should be handled. I won't repeat them here. They will be important later.
+A lot of the processes, the business rules, are stated in the last section already, like how removing non-empty boxes should be handled. I won't repeat them here.
 
-Notice that we decided early-on none of the user-facing components manage data directly. They access the shared data store via the background service only. This isn't a demand-driven decision. It's part of the requirement for this book. Examples _have_ to be lacking one way or another. I favor sensible features in this case.
+Notice that [we have decided early-on](#subsec:separatconcerns) none of the user-facing components manage data directly. They access the shared data store via the background service only.
 
-So, both the menu bar widget and the manager app don't need to know much about the domain model. Still, they are most important for the user. We'll start 
+This wasn't a demand-driven decision but rather part of this book's purpose. Examples have to be lacking in some way. In this case, I favor sensible features so you can apply them in your own work over a 100% coherent app design story.
+
+So, both the menu bar widget and the manager app don't need to know much about the domain model. They mostly need data to display stuff. We will discuss this further in the next part, when it comes to architecture and [Bounded Contexts](#sec:boundedcontexts).

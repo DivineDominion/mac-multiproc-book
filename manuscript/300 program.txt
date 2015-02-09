@@ -1,0 +1,9 @@
+-# Programming the Multi-Process App
+
+* outside-in approach
+    * start with user-facing components
+
+* After Bootstrapping: Making an App of it
+    * The main app's window
+    * The helper's status bar views
+

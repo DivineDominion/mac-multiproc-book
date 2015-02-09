@@ -12,4 +12,15 @@
 * realm.io: does support access from multiple threads/queues, but doesn't support access in concurrent processes <http://realm.io/docs/cocoa/0.89.2/#realm-files-cannot-be-accessed-by-concurrent-processes>
 
 ## Benefits and Drawbacks of Sharing a Core Data Store
+
+* Core Data takes care of [synchronizing the store][cd-inv]
+
+[cd-inv]: http://weblog.invasivecode.com/post/108082269360/sharing-data-between-apps-and-their-extenstions
+
 ## Benefits and Drawbacks of Using Different Storage Mechanisms
+
+* NSUserDefaults for [sharing simple settings][cd-inv]
+
+        let sharedDefaults = NSUserDefaults(suiteName: "group.com.yourdomain.YourAwesomeGroup")
+        sharedDefaults?.setObject(anObject, forKey: "anObjectKey")
+

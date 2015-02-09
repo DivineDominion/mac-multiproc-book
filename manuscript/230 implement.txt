@@ -1,4 +1,4 @@
-# Implementing the Processes
+# Implementing Processes
 
 ## Bootstrapping a Multi-Process Xcode Project {#bootstrap}
 

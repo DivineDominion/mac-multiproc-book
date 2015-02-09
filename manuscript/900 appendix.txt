@@ -86,3 +86,10 @@ According to one accompanying convention of the "East-Oriented Code" principle, 
 
 You don't have to make your code chainable, of course. If returning `self` causes problems or breaks your tests, though, your code isn't ready for focussing on a command-centric approach. This should become a driver of change towards useful refactorings.
 
+## Domain Model
+
+* avoid public setters to set up an object
+    * you could set only half of the necessary attributes, or none at all, and had to check before use everytime
+    * consequently, don't manipulate array attributes directly, but expose methods which limit how much the developer can do with it
+    * promiscuous objects
+    * instead, use a constructor which protects invariants

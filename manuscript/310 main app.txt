@@ -1,0 +1,8 @@
+# Handling User Interaction in the main app
+
+## TDD view controllers
+## Leverage Cocoa Bindings
+## Dialogs
+### Add Box Dialog
+### Add Item Dialog
+## Stubbing XPC interfaces

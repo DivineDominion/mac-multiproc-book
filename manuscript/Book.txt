@@ -1,12 +1,16 @@
 000 introduction.txt
 
 100 understanding.txt
+120 example.txt
 
 200 solution.txt
 210 architecture.txt
 220 database.txt
 230 implement.txt
 
-300 discussion.txt
+300 program.txt
+
+600 discussion.txt
 
 900 appendix.txt
+950 troubleshooting.txt

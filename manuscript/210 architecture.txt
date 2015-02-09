@@ -2,10 +2,23 @@
 
 ## A bit of Domain-driven Design Vocabulary Recap
 
-## Bounded Contexts
+## Bounded Contexts {sec:boundedcontexts}
 
-* the app has one context only
-* multiple contexts would exist if we talked about different facets of a thing, or about different things altogether, but here, we are working with the same vocabulary
+You can think of Bounded Context as the limit of your information's scope. When you have two Bounded Contexts, they don't know anything about each others internals. When both deal with Person objects, for example, both will model them differently. Both will have their own Domain Model.<!--ct: TODO add classic example of red DDD book-->
+
+Our example app is simple. Its background process will deal with the Domain Model we have sketched already.
+
+The two user interface applications query the background process like a server. They obtain data and have to make sense of it. Will they use the same Domain Model? 
+
+Pro
+:   both talk about boxes and items in a similar fashion, so you could say they have the same understanding and thus can use the same model
+:   the super-simple Entities allow for similar representation
+
+Con
+:   apps don't have direct write-acceess to the domain and shouldn't be fooled otherwise: we need a read-only model for the user-facing apps
+
+<!--ct: TODO make table of this comparison-->
+
 
 ## Aggregates
 
