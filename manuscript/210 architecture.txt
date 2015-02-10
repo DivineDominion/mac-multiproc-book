@@ -2,7 +2,7 @@
 
 ## A bit of Domain-driven Design Vocabulary Recap
 
-## Bounded Contexts {sec:boundedcontexts}
+## Bounded Contexts {#sec:boundedcontexts}
 
 You can think of Bounded Context as the limit of your information's scope. When you have two Bounded Contexts, they don't know anything about each others internals. When both deal with Person objects, for example, both will model them differently. Both will have their own Domain Model.<!--ct: TODO add classic example of red DDD book-->
 

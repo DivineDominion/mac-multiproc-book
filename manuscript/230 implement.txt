@@ -77,7 +77,7 @@ By now, both app targets should compile. They don't do anything, though. You sho
 
 I will guide you through the process of creating your own interacting processes from scratch in this section.
 
-If you want to have a look at the outcome of this only and find the step-by-step guide too long, just download the [demo app's code after the adaptation from GitHub]201501221730github and look at the result. See you in [the next section](#sec:testdriveapi)!
+If you want to have a look at the outcome of this only and find the step-by-step guide too long, just download the [demo app's code after the adaptation from GitHub]201501221730github and look at the result. See you in [the next section](#sec:xpcconcepts)!
 
 
 ### Define a shared protocol
@@ -298,19 +298,173 @@ When the project is prepared, you need to perform the following steps in code to
 * On the client side, start the XPC service as a login item via `SMLoginItemSetEnabled()`.
 * Then obtain the result of the connection's `remoteObjectProxyWithErrorHandler()`, cast it to your shared protocol, here `ProvidesCounts`, and use it like any other object.
 
-Run the app and see what happens. In my case, it prints the number to the console as expected. Congratulations! This was a lot of effort for not very much. But from now on, we can roll quickly and add real application logic.
+Run the app and see what happens. In my case, it prints the number to the console as expected. Congratulations! This was a lot of effort for not very much. But we're getting to grips with the new API, so we can roll more quickly and add real application logic, soon.
 
 If you didn't follow along in your code, check out the demo app [with changes this far][201501221730github].
 
 [201501221730github]: https://github.com/DivineDominion/mac-multiproc-code/tree/001-xpc-bootstrapping
 
-## Test-Driving the XPC API {#sec:testdriveapi}
+## XPC API Concepts {#sec:xpcconcepts}
+
+So far, we've managed to get a project with a logon helper service up and running. We connected the application (the client) to the XPC service.
+
+XPC services are designed to handle multiple clients. Each connection will go through the service's connection delegate and can obtain its own proxy object instance. Or you could share an instance between connections if you want.
+
+The point is: the XPC service is designed to dispatch whatever it does asynchronously. You only have to do the following:
+
+1. Create an `NSXPCConnection` and `resume()` it. This will prepare the connection.
+2. Obtain a `remoteObjectProxy()`. This will establish the connection inasmuch as actual data is sent back and forth.
+
+Afterwards, the XPC service's exported object will do its thing and you don't have to worry about the connection itself anymore.
+
+
 
 ### Make the connection bi-directional
+
+We have queried the XPC service successfully. But how do the client apps get notified when the shared data store is changed to update the user interface? We could either use `NSDistributedNotifications` to broadcast changes or make the XPC connection bi-directional.
+
+Bi-directional XPC Connections are symmetrical. Both specify their expectations through a `remoteObjectInterface` and supply an `exportedObject`.
+
+So far, on the client side, things looks like this:
+
+{linenos=no}
+    connection.remoteObjectInterface = NSXPCInterface(`protocol`: ProvidesCounts.self)
+    connection.resume()
+
+And on the server side:
+
+{linenos=no}
+    newConnection.exportedInterface = NSXPCInterface(`protocol`: ProvidesCounts.self)
+    var exportedObject = TheHelper()
+    newConnection.exportedObject = exportedObject
+    newConnection.resume()
+
+Now if the client exports an object itself to the XPC service, we simply have to do something similar:
+
+    connection.remoteObjectInterface = NSXPCInterface(`protocol`: ProvidesCounts.self)
+    connection.exportedInterface = NSXPCInterface(`protocol`: Listener.self)
+    connection.exportedObject = self // This currently is AppDelegate
+    connection.resume()
+
+And the XPC service will need to know about the `remoteObjectInterface`:
+
+    newConnection.exportedInterface = NSXPCInterface(`protocol`: ProvidesCounts.self)
+    var exportedObject = TheHelper()
+    newConnection.exportedObject = exportedObject
+    newConnection.remoteObjectInterface = NSXPCInterface(`protocol`: Listener.self)
+    newConnection.resume()
+
+This new `Listener` protocol is pretty simple: it receives an integer. The client application will simply print the number it receives to the console so we can see that it works as advertised.
+
+    @objc(Listener)
+    protocol Listener {
+        func updateTicker(tick: Int)
+    }
+
+Right after accepting the connection, the XPC service will initiate a ticker to send some numbers without being asked by the client first:
+
+    class ServiceDelegate : NSObject, NSXPCListenerDelegate {
+        func listener(listener: NSXPCListener!, shouldAcceptNewConnection newConnection: NSXPCConnection!) -> Bool {
+            newConnection.exportedInterface = NSXPCInterface(`protocol`: ProvidesCounts.self)
+            var exportedObject = TheHelper()
+            newConnection.exportedObject = exportedObject
+            newConnection.remoteObjectInterface = NSXPCInterface(`protocol`: Listener.self)
+        
+            var valid = true
+        
+            newConnection.invalidationHandler = {
+                valid = false
+                NSLog("invalidated")
+            }
+
+            newConnection.resume()
+            
+            dispatch_async(dispatch_get_global_queue(0, 0)) {
+                // Retrieve the object from the client which responds to the
+                // protocol we've just defined.
+                let listener = newConnection.remoteObjectProxyWithErrorHandler({ 
+                    error in
+            
+                    dispatch_async(dispatch_get_main_queue()) {
+                        NSLog("error in the connection: \(error.description)")
+                    }
+                }) as Listener
+        
+                // Every 5 seconds until invalidated or the sequence has finished,
+                // send a number across the connection.
+                for (var i = 0; i < 10; i++) {
+                    NSThread.sleepForTimeInterval(5)
+                    
+                    // We have to abort the process if the connection 
+                    // is invalidated, or else the loop will continue.
+                    if (!valid) {
+                        NSLog("aborting")
+                        break
+                    }
+                    
+                    NSLog("Sending \(i)")
+                    listener.updateTicker(i)
+                }
+            }
+        
+            return true
+        }
+    }
+
+Now if we start the demo app which launches the service, too, this is the console output when we quit the app during the process after a few seconds:
+
+    FRMDA3XRGC.de.christiantietze.multiproc.Helper[6249]: accepting connection
+    MultiProcCounter[6246]: The result is: 4455
+    FRMDA3XRGC.de.christiantietze.multiproc.Helper[6249]: Sending 0
+    MultiProcCounter[6246]: Tick #0
+    FRMDA3XRGC.de.christiantietze.multiproc.Helper[6249]: Sending 1
+    MultiProcCounter[6246]: Tick #1
+    FRMDA3XRGC.de.christiantietze.multiproc.Helper[6249]: Sending 2
+    MultiProcCounter[6246]: Tick #2
+    
+    CoreServicesUIAgent[336]: unexpected message <OS_xpc_error: <error: 0x7fff74b92c60> { count = 1, contents =
+    	"XPCErrorDescription" => <string: 0x7fff74b92f70> { length = 18, contents = "Connection invalid" }
+    }>
+    
+    FRMDA3XRGC.de.christiantietze.multiproc.Helper[6249]: invalidated
+    FRMDA3XRGC.de.christiantietze.multiproc.Helper[6143]: aborting
+    
+
+Notice that the second to last entry is a log message by `CoreServicesUIAgent`, reporting an invalidated connection as `OS_xpc_error`. The helper aborts the process when it received the invalidation message.
+
+<!--ct: commit edea24f454aeff1a0a91739e5359c7682e270415-->
+
 ### Handle connection interruptions
 
-> You’ll typically have interruption handlers in your application and invalidation handlers in you xpc service.
-> http://blog.yvs.eu.com/2013/07/cocoa-interprocess-communication-with-xpc/
+> You'll typically have interruption handlers in your application and invalidation handlers in you xpc service.
+> ---[@CocoaKevin](http://blog.yvs.eu.com/2013/07/cocoa-interprocess-communication-with-xpc/)
+
+
+We've already got to know `invalidationHandler` in the last example. This callback is used when the client application crashes, for example. When the connection is invalidated, you can't use the `NSXPCConnection` instance anymore. It wouldn't make sense otherwise: what could recovery from a crashed client application look like anyway?
+
+For the other side of the connection, there's also an `interruptionHandler` property, which you will need for the client app. If you shutdown the XPC service while the connection is open, the connection won't be invalidated. It will merely be interrupted.
+
+The applicatian can recover from interruptions. Recall that `launchd` manages XPC service lifecycles and takes care for re-launching crashed services. You can use the existing connection to perform additional queries.
+
+From [the docs][errordoc]:
+
+> In addition to any error handling methods specific to a given helper's task, both the XPC service and the main app should also provide the following XPC error handler blocks:
+> 
+> *   Interruption handler---called when the process on the other end of the connection has crashed or has otherwise closed its connection.
+>     
+>     The local connection object is typically still valid---any future call will automatically spawn a new helper instance unless it is impossible to do so---but you may need to reset any state that the helper would otherwise have kept.
+>     
+>     The handler is invoked on the same queue as reply messages and other handlers, and it is always executed after any other messages or reply block handlers (except for the invalidation handler). It is safe to make new requests on the connection from an interruption handler.
+> 
+> *   Invalidation handler---called when the invalidate method is called or when an XPC helper could not be started. When this handler is called, the local connection object is no longer valid and must be recreated.
+>     
+>     This is always the last handler called on a connection object. When this block is called, the connection object has been torn down. It is not possible to send further messages on the connection at that point, whether inside the handler or elsewhere in your code.
+
+For some bi-directional connections, it is advisable to provide both interruption and invalidation handlers. The connections which qualify are probably anonymous connections, where two clients connect to an XPC service (server) and exchange connection tokens to finally connect to each other. That's a very cool feature, but it goes beyond the scope of this book and its example project.
+
+So we'll stick to providing interruption handler on the client side, and invalidation handler for the XPC service's side.
+
+[errordoc]: https://developer.apple.com/library/mac/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingXPCServices.html#//apple_ref/doc/uid/10000172i-SW6-SW24
 
 ### Remove the old Helper process automatically with every build during initial development
 
@@ -325,7 +479,7 @@ When you get started with developing the processes, it's going to get on your ne
         echo "No Helper was Running."
     fi
 
-This is not what you are going to want later on, but it'll suffice to get past the initial trouble. To restart or shut down the helper manually, you can create an Automator service to execute this script and add a shortcut to it. Or you use a script launcher like Keyboard Maestro.
+This is not what you are going to want later on, but it'll suffice to get past the initial trouble. To restart or shut down the helper manually, you can create an Automator service to execute this script and add a shortcut to it. Or use a script launcher like Keyboard Maestro.
 
 By all means: do yourself a favor and don't use the Terminal directly everytime.
 
