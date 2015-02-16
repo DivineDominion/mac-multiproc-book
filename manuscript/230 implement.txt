@@ -432,7 +432,7 @@ Now if we start the demo app which launches the service, too, this is the consol
 
 Notice that the second to last entry is a log message by `CoreServicesUIAgent`, reporting an invalidated connection as `OS_xpc_error`. The helper aborts the process when it received the invalidation message.
 
-<!--ct: commit edea24f454aeff1a0a91739e5359c7682e270415-->
+See [the sample code at this stage](https://github.com/DivineDominion/mac-multiproc-code/tree/edea24f454aeff1a0a91739e5359c7682e270415) or [just the changes](https://github.com/DivineDominion/mac-multiproc-code/commit/edea24f454aeff1a0a91739e5359c7682e270415).
 
 ### Handle connection interruptions
 
@@ -470,8 +470,7 @@ So we'll stick to providing interruption handler on the client side, and invalid
 
 When you get started with developing the processes, it's going to get on your nerves to manually shut down or restart the background process all the time. Instead, add a script to your build phases to stop the process on every build.
 
-<!--ct: TODO add listing name: "Remove old Helper Script Build Phase"-->
-{linenos=no}
+{linenos=no, title="Remove old Helper Script Build Phase"}
     if launchctl list | grep de.christiantietze.multiproc; then
         echo "Removing Helper…"
         launchctl remove FRMDA3XRGC.de.christiantietze.multiproc.Helper
@@ -484,6 +483,59 @@ This is not what you are going to want later on, but it'll suffice to get past t
 By all means: do yourself a favor and don't use the Terminal directly everytime.
 
 ## Testing XPC Calls: Define Adapters
+
+So far, we've tested the XPC connection by starting both the background service and a client app. This is cumbersome, and it's hard to automate.
+
+Now that we've gained confidence in the project's principal setup, we can step back and stop with these learning tests. We've learned how XPC connections basically work. Now we're ready to develop the application itself. To do so, we'll make use of automatted tests.
+
+Testing an XPC connection is no different from testing user interaction in view controllers.
+
+To test if a view controller has set up a button correctly, you see if loading its view populates the button's `IBOutlet` property. If it isn't nil, the view is correctly connected in the Nib. Next, you test the action by inspecting the button. You don't perform a real click. Instead, you see if the button is connected to the right `IBAction`. Then you test the behavior of the action method in question.
+
+We can do the same for XPC: verify the connection, verify the set up and flow of information, and verify the behavior.
+
+In detail, this means:
+
+1. **Verify connection.** When a connection request comes in to the background service, what does it do? When should it accept the connection? How does it set up the `NSXPCConnection` instance? 
+2. **Verify set up & flow of information.** The background service will assign an object which the clients have access to through their object proxy. Is the correct object assigned? Does it respond to the requests which will be made? `exportedObject` doesn't utilize strong typing to help us not pass the wrong kind of object. We have to verify this ourselves.
+3. **Verify behavior.**  When we receive a call through an XPC connection, how do the objects on our end react? Test for behavior, just as you do with unit tests anyway.
+
+That's for the receiving end. The client code will have to take similar measures: set up the connection object, send a request, and test behavior depending on the result.
+
+Both the client and the service have to take interruptions and invalidations into account, respectively.
+
+To get this far, it helps to think about the concrete API we are going to use.
+
+<!--ct: TODO add image of interfaces-->
+
+* The client will be notified when the total capacity left reaches 0.
+* The service will receive requests for ordering new boxes.
+* The service will receive requests for assigning an item to existing boxes. This could fail if no boxes are present or all are full.
+* The service will receive requests for deleting particular items and boxes. This too could fail if boxes are non-empty.
+
+
+    @objc(ManagesBoxesAndItems)
+    public protocol ManagesBoxesAndItems {
+        func provisionBox(label: String, capacity: Int)
+        func provisionItem(name: String, inBoxWithIdentifier boxIdentifier: IntegerId)
+        func removeBox(boxIdentifier: IntegerId)
+        func removeItem(itemIdentifier: IntegerId, fromBoxIdentifier boxIdentifier: IntegerId)
+    }
+    
+    @objc(UsesBoxesAndItems)
+    protocol UsesBoxesAndItems {
+        func receiveBox(boxData: NSDictionary)
+        func receiveItem(itemData: NSDictionary)
+        
+        func allowAddingItems()
+        func forbidAddingItems()
+    }
+
+`IntegerId` is a type alias to `Int64` or 64 bit integer. We can't use real ID values here, which are represented as structs, because Objective-C doesn't understand structs. Instead of making classes out of them, I opted in to transferring the most primitive data possible.
+
+This is the API for both ways. Now that it is established, the application parts will be able to make use of it and grow.
+
+In the next part, we're going to actually implement the client apps and the background service using these protocols as means of communication.
 
 ## Dealing with crashes
 * Launch Services takes care of restarting the helper
