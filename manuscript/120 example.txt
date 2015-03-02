@@ -43,7 +43,7 @@ If there's room for one or more _items_, the widget will offer a quick-entry pan
 In the manager app, the user can see the list of existing boxes and their contents. The user may _assign_ labels to boxes. She can also _remove_ items at will. She can _remove_ boxes only if they're empty or the contents can be distributed accross leftover boxes.
 
 <!--ct: TODO add sketch of box-add dialog-->
-The user can _order_ more boxes at will, specifying the optional label and capacity of the box. Boxes come in sizes to carry 5, 10, or 30 items.
+The user can _order_ more boxes at will, specifying the optional label and capacity of the box. Boxes come in sizes to carry 5, 10, or 20 items.
 
 <!--ct: TODO add sketch of item-add dialog-->
 From the manager app, the user can also _add_ items directly if there's room in one of the remaining boxes. If there isn't, the action is inavailable. Also, the user is presented with a note, indicating that new boxes have to be ordered.

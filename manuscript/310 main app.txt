@@ -1,6 +1,23 @@
 # Handling User Interaction in the main app
 
 ## TDD view controllers
+
+I imported most of the code from my book _Exploring Mac App Development Strategies_.
+
+In this case, though, the code is much simpler and thus easier to test. Most of the real logic is delegated to another object, the view controller's event handler. The view controller itself cannot even decide whether it should remove an item from the list. Removing items is straightforward, but to remove a non-empty box is a rather involved process in comparison. To find out whether its items can be re-distributed is a concern of the domain. Domain logic should not bleed into the user interface. It shouldn't even reach the Application Layer in between.
+
+* Because the background service distributes items automatically, adding items doesn't involve fetching the currently selected box branch anymore
+
+### Embrace delegation even if it means you end up with a lot of objects
+
+Whenever I delegate much of the real work from a view controller to a designated event handler object, I wonder if this makes things slower. After all, there's another object to converse with. It has to do something in return and then tell the view controller what to do. Isn't that too many hoops?
+
+This isn't a performance issue in the end. It's an issue of mental modeling. You know [they say][doorway] that whenever you walk through a doorway, you lose access to part of your memory about what happened in the room you just left? I am afraid of a similar effect in programming: what if I introduce too many collaborating objects and things get worse? What if I won't be able to understand what happens anymore, the code gets fragile, slow, or whatever?
+
+There's tools for that, so I shouldn't worry. Diagrams make it easier to comprehend what the code is doing. 
+
+[doorway]: http://www.scientificamerican.com/article/why-walking-through-doorway-makes-you-forget/
+
 ## Leverage Cocoa Bindings
 ## Dialogs
 ### Add Box Dialog

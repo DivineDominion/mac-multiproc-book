@@ -1,4 +1,149 @@
 # Providing the Background Service
 
+## Creating a Testable Target for the Domain
+
+XPC Service targets cannot be unit tested with the default means Apple provides. A simple solution is to add yet another Cocoa Application target and put all of the domain in there. This target can be tested as usual. The XPC Service target will be nothing more than a thin layer around this fundamental core.
+
+
 ## Implement the Domain Model
+
+### Distributing Items Among all Existing Boxes
+
+The command we will look at is `DistributeItem`. It takes an item's title, creates the item, and puts the new item into a box that can actually hold the item.
+
+There are obvious guard clauses: if there are no boxes, fail. If all boxes are full, fail. Instead of making these checks guard clauses up front, though, we can put the set of all boxes through a few filter mechanisms:
+
+    public class DistributeItem {
+        let repository: BoxRepository
+    
+        public init(repository: BoxRepository) {
+            self.repository = repository
+        }
+    
+        public func distribute(itemTitle title: String) {
+        
+            let boxes = repository.boxes().filter { box in
+                return box.canTakeItem()
+            }.sorted { (one, other) -> Bool in
+                return one.remainingCapacity < other.remainingCapacity
+            }
+        
+            if let box = boxes.first {
+                // success!
+                return
+            }
+        
+            // failure
+        }
+    }
+
+This does the following:
+
+1. Fetch all boxes, out of any order.
+2. Remove all filled boxes.
+3. Sort remaining boxes by the amount of items they contain.
+4. Pick the first one from the stack, that is the box with the least items in it.
+
+Although using `filter()` and `sorted()` may look uncanny to the untrained eye, you can read the code from top to bottom and see what is done. 
+
+I didn't add a method like `boxesSortedByItemCount()` to the `BoxRepository` because its used in only this one particular place. If it were used more often, I'd definitely move this utility method into the repository class.
+
+We don't even lose an opportunity to optimize for fetching. Our concrete Core Data repository cannot sort by the amount of connections from box to items while fetching. It cannot even filter out full boxes. The predicate to achieve the latter is `items.@count`, an aggregate function, which in this special case requires the object to be fetched prior to sorting (or filtering). After fetching, this will work.
+
+Since there's not even a performance gain of putting the filtering into the Repository in this concrete case, I decided to keep everything in `DistributeItem`.
+
+Now what do success and failure scenarios look like?
+
+We could add a `successCalback: () -> ()` and a `noCapacityCallback: () -> ()` parameter, for example. Or, far worse, return a Boolean. `distribute(_:)` is a command, so it shouldn't return a value.
+
+Let us focus on failure, first. `distribute(_:)` could raise an exception. After all, it's a programmer error to invoke this method without prior checking for remaining capacity. For debugging purpose, this is fine, so we can add an `assert()` to the end of the method.
+
+`assert()` won't be of any help during production, though. I think it should simply fail silently. It's not a user-induced problem or some weird condition we have to observe when we ship the app. It's a rather simple error on our side if this method gets called. Let's just make sure this never happens.
+
+It should be okay to simply log what happened. To generate a lasting list of log entries, libraries such as [CocoaLumberjack][] come in handy.
+
+What about the success scenario? Distribution of items should include adding an item to a particular box.
+
+This is where we hit an unexpected road-block.
+
+[cocoalumberjack]: https://github.com/CocoaLumberjack/CocoaLumberjack
+
+### Protecting Against Race Conditions Is Not Part of the Domain
+
+Simplified, `distribute(_:)` takes care of the following:
+
+1. Fetch boxes from their Repository
+2. Filter results to find a suitable box
+3. Add item to the box
+
+Between steps 1 and 3, a concurrent operation may interfere. Suddenly, the previously picked box isn't valid anymore because another thread has added another item to it. Adding another item will fail.
+
+In other words, the data from our store got stale in between.
+
+No matter how we change the code and refactor the design, there's no way to make a single _transaction_ of this. It's always made up of a _read_ operation, and a _write_ operation, with potential for causing trouble in between. It's not a single, atomic operation.
+
+The Domain doesn't know anything about race conditions. If you put protection against race conditions into your Domain, you fall for the fallacy [Gojko Adzic calls][gojko] "race conditions hide business rules."
+
+Some or most race conditions are clearly not a sign of a lack of business rules. The business rules don't need to encompass what happens when two threads of your application interfere. The business rules can deal with how to remedy errors people make, or in this case, those your software makes.
+
+Without software, race conditions wouldn't occur. Consequently, they can't be part of the Domain. To deal with concurrency is a matter of the Application Layer at best.
+
+### Recovering From Race Conditions
+
+Starting simple, there are two paths to take:
+
+* **Can we retry?** Only two slots are free, one in each of two boxes. We add two items concurrently. Both get assigned to the same box at first. One item wins by a fraction of a second and gets added to the box. Adding the other fails. Can we retry to add the same item to another box? Yes, and this would totally work as expected.
+* **Can we compensate?** Only one slot is free but we process adding two items. The user things both items are on their way. Can the second item be put into another place? Not yet. Ordering a spare box to take care of the leftover item seems to be out-of-place to me. I'd rather let the item drop than make a surprise box addition. In this rare case, we can also tell the user we're sorry to have accepted the second item although the capacity doesn't suffice, and ask if we should drop it or order a new box. Avoiding data loss is always good.
+
+Usually, retrying is easy when you return a Boolean to indicate success or failure:
+
+    for box in allBoxes {
+        if box.addItem(item) {
+            exit
+        }
+    }
+
+This violates the principle of command--query-separation. That's okay, no one will die because of this.
+
+We have to ask ourselves if it's worth the trade-off. Someone came up with the principle to state: this is how your code will become more robust and side-effect free. Doing it this way once won't break anything, but it may induce a bad tendency to make your code worse overall. So much for the easy way.
+
+Compensating is a bit more tricky. Which part of the application knows how to compensate?
+
+Think about the various [flavors of messages][flav] in your code base. There are commands, of which you expect to perform changes. There are queries, which should be strictly side effect-free. There are notifications and events, broadcasting information without expecting any particular reaction.  Notifications are a means to achieve loose coupling between components and consequently cannot expect any reaction.
+
+With our distributed application, spread across various processes, it's natural to go for the latter to inform interested parties (other stand-alone parts of the app) about failing operations. Any part can compensate for the failure as long as it listens for the event.
+
+It's cognitively easier to think of the process in terms of commands between objects, though. It is true for myself, and I bet you feel no different: create a representation once and then pass it down (invoke method on other objects) until it reaches its destination; if processing fails, go back up (`return false`) until someone takes care of handling the failure. This is easy because each method has access to the data in question. That's the benefit of higher coupling: you know what you have, you know what to expect.
+
+Imagine broadcasting events wasn't the exception.
+
+In this situation, it'll be natural to broadcast an `ItemDistributionDidFail` notification. That's enough to show an alert dialog. If you attach the item data to the event, any receiving party will be able to compensate for the failure:
+
+The main app receives an `ItemDistributionDidFail` event. It doesn't know which item caused trouble, but it finds a complete item representation attached. It now can display which item did fail. It can ask the user for more boxes. If she agrees to order an additional box, the main app can send the item distribution order again (and consequently forget about the item in question). The XPC service now has plenty of storage and distributes the item. Everyone's happy.
+
+Sending events isn't a matter of seconds or minutes. It's nearly just as fast as sending messages to objects directly. (Of course, there's at least one more hop in between, but that amounts to nothing.)
+
+From a user experience perspective, it doesn't matter whether you couple parts loosely and send events or if you violate the principle of command--query-separation and get feedback immediately. This is all about programmer happiness and higher-quality code.
+
+We split up the app into three autonomous components to make the application maintainable. We should continue to strive for the most robust solution. That's why I will explore the event-based path further.
+
+[flav]: http://verraes.net/2015/01/messaging-flavours/
+[gojko]: http://gojko.net/2010/06/11/udi-dahan-the-biggest-mistakes-teams-make-when-applying-ddd/
+
+### Sketching a new Kind of Service to Distribute Items
+
+To understand where information about failure could originate, working our way back from bottom to top in the call chain will help:
+
+* `box.addItem(item)` will fail because `box` protects itself against invalid commands. It sends an `AddingItemDidFail` event.
+* The objective of `ProvisioningService.provisionItem` is not fulfilled. Provisioning failed. But the service doesn't notice after it issued the command to `addItem`. No change here.
+* `DistributionService` receives an `AddingItemDidFail` event. It previously sent off the command to the `ProvisioningService`, so it does care about the success of the operation.
+* `DistributionService` tries to pick another box with enough capacity in it and issues another round of provisioning. It does this every time an `AddingItemDidFail` event happens until all boxes are filled. Then, it will send an `ItemDistributionDidFail` event with all data attached to re-create a similar item. (Let's assume this is the case to go further up.)
+* The XPC Service notices the `ItemDistributionDidFail` event. It takes the item data and notifies all connected processes.
+* The status bar helper app receives the notification first. Should it care? Users can add items from within the helper window after all.
+* The main app receives the notification. It responds with an alert dialog to ask the user for intervention.
+
+Now what if the user's action didn't originate in the main app? What if the main app isn't even running? 
+
+<!--ct: TODO will it suffice to notify only one party?-->
+
 ## Implement the XPC interfaces
