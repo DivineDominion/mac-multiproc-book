@@ -1,8 +1,40 @@
 # Providing the Background Service
 
+In your usual Cocoa MVC[^mvc] application, you start with a single application product target and its oft declined test target. You put everything you create in the product target, wire it together, run the app, and then you're done.
+
+Our objective is different. We create two user interface applications which communicate with some kind of server. So we can't pass model objects around, and we can't take the usual shortcuts. Everything boils down to the connection of client and server, of an `NSXPCConnection` to an `NSXPCListener`.
+
+The XPC service will contain all of the model stuff. It takes care of and enforces all the business rules. The user interface applications have to look out for constraints, too, but if they don't, nothing weird should happen thanks to the self-contained Domain Model. It won't let bad things happen. That's its job.
+
+Writing XPC services is a bit different to single-process apps, so we proceed as follows:
+
+1. Prepare the XPC service product target, which we've done already,
+2. add an XPC service _core_ target to host the actual code and enable testing,
+3. implement the Domain and expose ways to change it through well-separated layers in our architecture, writing unit tests on the way, and finally
+4. test-drive the core through simple integration tests.
+
+ [^mvc]: MVC stands for a design pattern called "Model, View, Controller"; Apple does promote this pattern through their application templates. You get a Core Data "model", some `NSViewController` subclass, and the actual view in Interface Builder NIB files. The patten was initially designed to give each view component its own controller and a model object, but that's not how people use it nowadays.
+
 ## Creating a Testable Target for the Domain
 
-XPC Service targets cannot be unit tested with the default means Apple provides. A simple solution is to add yet another Cocoa Application target and put all of the domain in there. This target can be tested as usual. The XPC Service target will be nothing more than a thin layer around this fundamental core.
+XPC service targets cannot be unit tested out of the box. Xcode won't let you add a testing target, and that's it.
+
+A simple solution is to add yet another Cocoa Application target and put everything to be tested there. All of the code is going to have two targets afterwards: the new Cocoa Application target for testing purposes, and the XPC service target. The XPC Service target will be nothing more than a thin veneer around this fundamental core.
+
+In fact, besides the `.entitlements` file, the XPC service target will contain nothing more than a `main.swift` file with the following content:
+
+{title="The full main.swift file of the XPC service"}
+    import Cocoa
+    
+    if let dependencies = Dependencies().setUp() {
+        // Actually run the service (and never return)
+        NSRunLoop.currentRunLoop().run()
+    } else {
+        NSLog("Couldn't start the XPC service")
+        exit(EXIT_FAILURE)
+    }
+
+To get there, we
 
 
 ## Implement the Domain Model
@@ -21,19 +53,20 @@ There are obvious guard clauses: if there are no boxes, fail. If all boxes are f
         }
     
         public func distribute(itemTitle title: String) {
-        
-            let boxes = repository.boxes().filter { box in
-                return box.canTakeItem()
-            }.sorted { (one, other) -> Bool in
-                return one.remainingCapacity < other.remainingCapacity
-            }
-        
-            if let box = boxes.first {
+            if let box = boxes().first {
                 // success!
                 return
             }
         
             // failure
+        }
+        
+        func boxes() -> [Box] {
+            return repository.boxes().filter { box in
+                return box.canTakeItem()
+            }.sorted { (one, other) -> Bool in
+                return one.remainingCapacity < other.remainingCapacity
+            }
         }
     }
 
@@ -52,23 +85,356 @@ We don't even lose an opportunity to optimize for fetching. Our concrete Core Da
 
 Since there's not even a performance gain of putting the filtering into the Repository in this concrete case, I decided to keep everything in `DistributeItem`.
 
-Now what do success and failure scenarios look like?
+#### Handling Success and Failure Scenarios
 
-We could add a `successCalback: () -> ()` and a `noCapacityCallback: () -> ()` parameter, for example. Or, far worse, return a Boolean. `distribute(_:)` is a command, so it shouldn't return a value.
+The operation can fail. So there's two possible outcomes. We need to deal with both and figure out how to communicate what has happened to the client app.
 
-Let us focus on failure, first. `distribute(_:)` could raise an exception. After all, it's a programmer error to invoke this method without prior checking for remaining capacity. For debugging purpose, this is fine, so we can add an `assert()` to the end of the method.
+We could return a boolean. `distribute(_:)` is a command, though, so it shouldn't return a value. But it might work okay.
 
-`assert()` won't be of any help during production, though. I think it should simply fail silently. It's not a user-induced problem or some weird condition we have to observe when we ship the app. It's a rather simple error on our side if this method gets called. Let's just make sure this never happens.
+We could add a `successCallback: () -> ()` and a `noCapacityCallback: () -> ()` parameter, for example. But I think the callback blocks are disproportionate to the effect we want to achieve. After all, `DistributeItem` isn't even in the outermost layer. The callbacks will be provided by Services in the Application Layer -- and then the Application Service will have to figure out how to report success/failure to _its_ caller, and so on.
 
-It should be okay to simply log what happened. To generate a lasting list of log entries, libraries such as [CocoaLumberjack][] come in handy.
+Returning a boolean has a similar disadvantage: you have to pass the result all the way up the call chain to the client somehow.
 
-What about the success scenario? Distribution of items should include adding an item to a particular box.
+That's the benefit of higher coupling: you know what you have, you know what to expect. It also limits our ways out tremendously.
 
-This is where we hit an unexpected road-block.
+Instead of passing the result of the operation up all the way of the call chain, what else could we do?
+
+First, understand why we want to couple strong and return the result of a potientally failing operation. The usual tactics for communicating results centers around _immediacy_: you call a method, you expect a reaction.
+
+If you separate commands from queries, you won't allow commands to communicate the result via return values. Commands are there to produce change only.
+
+But we're trained (and spoilt) to expect something similar to a query's response, so we want to design objects to react immediately, so we create client code like this: Call a method, expect change, check the outcome, act accordingly.
+
+Here's an exercise. How can you model a process where you issue commands to _Bar_ from _Foo_ but don't act on the change _Bar_ produced directly from within _Foo_?
+
+I think it works exceptionally well to let a totally unrelated object react to the change.
+
+Enter the wonderful world of Domain Events and notifications.
+
+#### Introducing (Domain) Events
+
+We can decouple command execution from response handling through events. The benefit to directly sending messages as methods is that we don't have to know the interested parties. Even if in fact only one subscriber exists per message, the benefit of hiding its existence from the sender can be worth the effort.
+
+Cocoa spoils us: `NSNotificationCenter` works just great. The only thing you have to take care of is sending a notification of the right `name` with sufficient `userInfo`. This is error-prone, because only in runtime will we find whether we forgot to add an expected key-value-pair to the `userInfo` dictionary.
+
+We can let the compiler help us in sending events with all necessary data by wrapping them in custom structures.
+
+##### The `ItemDistributionFailed` Event
+
+Here's my take on the failure event, `ItemDistributionFailed`, as a template for Domain Events:
+
+    public struct ItemDistributionFailed: DomainEvent {
+        public static var eventType: DomainEventType {
+            return DomainEventType.ItemDistributionFailed
+        }
+    
+        public let itemTitle: String
+    
+        public init(itemTitle: String) {
+            self.itemTitle = itemTitle
+        }
+    
+        public init(userInfo: UserInfo) {
+            let itemData = userInfo["item"] as UserInfo
+            let itemTitle = itemData["title"] as String
+        
+            self.init(itemTitle: itemTitle)
+        }
+    
+        public func userInfo() -> UserInfo {
+            return [
+                "item" : [
+                    "title": itemTitle
+                ]
+            ]
+        }
+    
+        public func notification() -> NSNotification {
+            return NSNotification(name: self.dynamicType.eventType.name, object: nil, userInfo: userInfo())
+        }
+    }
+
+Instances can be created in two ways: 
+
+1. `ItemDistributionFailed(itemTitle: "...")`, which we'll use when we send an event, and
+2. `ItemDistributionFailed(userInfo: ["item" : ["title" : "..."]])`, which we'll never invoke manually but which is useful for re-creating an event object instance from `NSNotification` `userInfo`.
+
+The event can create an `NSNotification` object on its own with the data available. I decided to put the types of events available into a string-based `enum` called `DomainEventType`. But it would work just as well if the event name was a static string or if you decide to make a string of the struct's name through `_stdlib_getDemangledTypeName()` or similar.
+
+With this event boilerplate in place, `DistributeItem.distribute` can now communicate failure through a `DomainEventPublisher`:
+
+        var eventPublisher: DomainEventPublisher {
+            return DomainEventPublisher.sharedInstance
+        }
+        
+        public func distribute(itemTitle title: String) {
+            if let box = boxes().first {
+                // success!
+                return
+            }
+            
+            // Publish failure event
+            eventPublisher.publish(ItemDistributionFailed(itemTitle: title))
+        }
+
+To create other events in the future, here's the `DomainEvent` protocol which specifies the shared bare minimum:
+
+    public typealias UserInfo = [NSObject : AnyObject]
+    
+    public protocol DomainEvent {
+        /// The `DomainEventType` to identify this kind of DomainEvent
+        class var eventType: DomainEventType { get }
+    
+        init(userInfo: UserInfo)
+        func userInfo() -> UserInfo
+        func notification() -> NSNotification
+    }
+
+##### The `DomainEventPublisher` and its `DomainEventSubscription`
+
+`DomainEventPublisher` is a wrapper around sending `NSNotification` objects through a common `NSNotificationCenter`. The nice thing about this is that you can replace either the `DomainEventPublisher` during unit tests or create per-test `NSNotificationCenter` objects to verify actual delivery of the event.
+
+At its core, it looks like this:
+
+    public class DomainEventPublisher {
+        // ...
+        
+        public func publish(event: DomainEvent) {
+            notificationCenter.postNotification(event.notification())
+        }
+        
+        public func subscribe<T: DomainEvent>(eventKind: T.Type, usingBlock block: (T!) -> Void) -> DomainEventSubscription {
+            // Pick a different default queue if you want async event processing
+            let mainQueue = NSOperationQueue.mainQueue()
+    
+            return self.subscribe(eventKind, queue: mainQueue, usingBlock: block)
+        }
+
+        public func subscribe<T: DomainEvent>(eventKind: T.Type, queue: NSOperationQueue, usingBlock block: (T!) -> Void) -> DomainEventSubscription {
+            let eventType: DomainEventType = T.eventType
+            let observer = notificationCenter.addObserverForName(eventType.name, object: nil, queue: queue) {
+                notification in
+        
+                let userInfo = notification.userInfo!
+                let event: T = T(userInfo: userInfo)
+                block(event)
+            }
+            
+            return DomainEventSubscription(observer: observer, eventPublisher: self)
+        }
+        
+        public func unsubscribe(subscriber: AnyObject) {
+            notificationCenter.removeObserver(subscriber)
+        }
+    }
+
+The full source is [available online][publisher].
+
+Let's talk about subscription a bit.
+
+I never used `addObserverForName(_:,object:,queue:)` much in the past. In case you didn't either: it basically creates an observer object of type `NSObjectProtocol` which is tied to the notification parameters so you don't have to call the verbose `removeObserver(_:,name:,object:)` later on to get rid of it. It suffices to simply use `removeObserver(_:)`.
+
+The observer object takes a block. If the notification is triggered, the block is invoked and an `NSNotification` is passed in. From this, we can re-create an appropriate Domain Event object.
+
+The resulting `DomainEventSubscription` merely takes care of unsubscribing automatically when its reference is nilled out:
+
+    public class DomainEventSubscription {
+        let observer: NSObjectProtocol
+        let eventPublisher: DomainEventPublisher
+    
+        public init(observer: NSObjectProtocol, eventPublisher: DomainEventPublisher) {
+            self.observer = observer
+            self.eventPublisher = eventPublisher
+        }
+    
+        deinit {
+            eventPublisher.unsubscribe(observer)
+        }
+    }
+
+##### Using the Event Delivery System
+
+Now that's all of the prerequisites. From now on, we can focus on actually using the Domain Event publishing system.
+
+Interested parties subscribe like this:
+
+    let eventPublisher = DomainEventPublisher.sharedInstance
+    let subscription = eventPublisher.subscribe(ItemDistributionFailed.self) {
+        event in
+        
+        // React to event, like so:
+        NSLog("Distribution of item '\(event.itemTitle)' failed.")
+    }
+
+The incoming event is of kind `ItemDistributionFailed`, which is inferred from the first parameter of `subscribe(_:,block:)`. That's what generics do: we allow a method to take a parameter of virtually any type as long as it adheres to the `DomainEvent` protocol. Then we use the type placeholder in a block to specify it'll receive an object of the same type, whichever that is.
+
+This is the first use of a Domain Event, so I got into a lot of detail. We will utilize Domain Events a lot more often from now on to tackle similar problems. To use new event types so, we need to perform three steps:
+
+1. Add a new Domain Event type which implements the `DomainEvent` protocol,
+2. add a `DomainEventType` entry for the name and use it from within the new type, of course, and finally
+3. subscribe to the event and keep the subscription around.
+
+
+[publisher]: https://github.com/DivineDominion/mac-multiproc-code/blob/master/RelocationManagerServiceDomain/DomainEventPublisher.swift
+
+
+#### But can't we simply throw exceptions?
+
+`distribute(_:)` could raise an exception. After all, it's a programmer error to invoke this method without prior checking for remaining capacity. For debugging purpose, this is fine, so we could add an `assert()` to the end of the method:
+
+        public func distribute(itemTitle title: String) {
+            if let box = boxes().first {
+                // success!
+                return
+            }
+        
+            assert(false, "Insufficient total box capacity remaining "\
+                "to distribute item '\(title)'")
+        }
+
+Keep in mind `assert` won't be of any help during production, though. Also, Swift doesn't even support any other kind of exception for control flow purpose -- unlike Java, for example. And effectively unlike Objective-C, too, although Objective-C folks would never have used exceptions in the first place.
+
+I think the process should rather fail silently anyway: it's not a user-induced problem. Neither is it a weird condition in the outside world, like a lossy internet connection or unreachable servers. It's a rather simple error on our side if this method gets called at all with zero total capacity. Let's better make sure this never happens -- but don't crash the XPC service just because we forgot a check in the user-facing apps.
+
+Since it's a programmer error, it should be okay to log what happened and move on. No data will be corrupted. The worst outcome is that no item will be created in the database and the user will not see the app show a change. This is bad enough, of course, but not fatal to the service.
+
+To generate a lasting list of log entries, libraries such as [CocoaLumberjack][] come in handy. We could ask the user to send us the logs from time to time so we can get rid of nasty bugs.
 
 [cocoalumberjack]: https://github.com/CocoaLumberjack/CocoaLumberjack
 
-### Protecting Against Race Conditions Is Not Part of the Domain
+#### Distribute an Item Successfully: Delegate to `ProvisioningService`
+
+The failure case was the most interesting so far because it introduced most of the problems. We left the happy path out, though. How does `DistributeItem` take care of creating an `Item`, assigning it to the `Box` that was found, and communicate success?
+
+It delegates.
+
+The three steps I just mentioned are not about _distribution_ anymore. They are what I call _provisioning_.
+
+Let's imagine the specifications change in the future. We aren't meant to distribute items upon creation anymore. Instead, they may float around freely. The "Add Item" button will be labeled "Create Item". Then the user may manually put items from a list into boxes.
+
+Recall the distribution process:
+
+    if let box = boxes().first {
+        // success!
+        return
+    }
+
+In that case, finding a box prior to creating an item is not necessary anymore. Also, it's likely that the new process cannot fail for non-programmer reasons. After all, we would have to create an item only and that's it.
+
+It doesn't make sense to call it "distribution" anymore, does it?
+
+We are reasoning about the responsibilites or concerns of `DistributeItem`. I am a strong proponent of the [Single Responsibility Principle][srp]. Objects with multiple responsibilities are harder to reason about, harder to change, and thus harder to keep around. So we are going to aim to create objects which do only one thing, and not many.
+
+The concern of `DistributeItem` is stated clearly thanks to the object's name: it distributes a new item. To find out which parts of a complex process belong here and not somewhere else, simply ask yourself: is this about distribution or about something else? If distribution was gone, should this other thing be gone too? If X does change, should Y change as well?
+
+Item creation is not part of distribution. If we got rid of distributing items automatically in a future version of the software, items still have to be created somehow.
+
+That's why we're going to leave `distributeItem(itemTitle:)` like this:
+
+    var eventPublisher: DomainEventPublisher {
+        return DomainEventPublisher.sharedInstance
+    }
+
+    let provisioningService: ProvisioningService
+        
+    public func distribute(itemTitle title: String) {
+        if let box = boxes().first {
+            provisioningService.provisionItem(title, inBox: box)
+            return
+        }
+    
+        eventPublisher.publish(ItemDistributionFailed(itemTitle: title))
+    }
+
+Now we're done with `DistributeItem` for now. We've delegated item creation to a `ProvisioningService`. Understanding the process isn't quite finished, so let's have a look at this new fella.
+
+[srp]: http://en.wikipedia.org/wiki/Single_responsibility_principle
+
+#### The `ProvisioningService` before and after a huge Model refactoring
+
+Admittedly, I created the `ProvisioningService` earlier than I created `DistributeItem`. I thought I knew what was going to come, so I just wrote it. It was pretty straightforward in the early days:
+
+    public func provisionItem(title: String, inBox box: Box) {
+        let itemId = repository.nextItemId()
+        let item = Item(itemId: itemId, title: title)
+
+        box.addItem(item)
+    
+        let event = BoxItemProvisionedEvent(boxId: box.boxId, itemId: itemId, itemTitle: item.title)
+        eventPublisher.publish(event)
+    }
+
+Create an item according to its specification. Then add it to a box. Publish a Domain Event to indicate success and tell interested parties, including the client apps, about the new item's ID.
+
+Things changed when I implemented re-distribution of items upon box deletion. The Domain Model [at this particular point in time][commit-before] pictured `Box` as the only Aggregate Root. You'd access items through a box object only. This didn't work well to implement _moving_ items. I was able to delete and re-create similar items, but then I wouldn't change one and the same Entity but create a new one. That's not what was specified by the business rules. "Moving" means that the item moved stays the same.
+
+Of course I could make the client apps work just as well. The point is that this would equal cheating. Cheating on the business rules, and cheating on the intent of a Domain Model. It is meant to reflect the business rules, not bend them so it looks like what was ordered on the outside.
+
+With our not quite so interesting example application, the net gain of adhering to principles of Domain Driven Design religiously is nearly zero. Adhering to the principles is part of the deal of this book, though. The example app may be contrived, but we still have to code as if it's complex enough to warrant multiple application products, persistence with Core Data, and a real software architecture.
+
+So no cheating allowed.
+
+We need to get a handle to the item about to be moved _and_ give it the power to move to another box. With the old model, `Item` didn't have that power. Everything was done through the outside world-facing root object of the Aggregate: `Box`.
+
+Moving items from one box to another means that an item is moved, not that a box moves an item to another box, though. To reflect this, we have to tear `Box` and `Item` apart a bit. Box can still be the root of its own Aggregate, but now `Item` will be an Aggregate, too.
+
+With two Aggregates instead of one, the process changes quite a bit. Here is the relevant part:
+
+    public class ProvisioningService {
+        var eventPublisher: DomainEventPublisher {
+            return DomainEventPublisher.sharedInstance
+        }
+    
+        let boxRepository: BoxRepository
+        let itemRepository: ItemRepository
+        public lazy var identityService: IdentityService = IdentityService(boxRepository: self.boxRepository, itemRepository: self.itemRepository)
+    
+        // ...
+        
+        public func provisionItem(title: String, inBox box: Box) {
+            let item = box.item(title, identityService: identityService)
+        
+            itemRepository.addItem(item)
+        
+            let event = ItemProvisioned(itemId: item.itemId, title: item.title)
+            eventPublisher.publish(event)
+        }
+    }
+
+In detail, the changes include:
+
+* `Box` has a factory method `item(_:,identityService:)` to create an object which is assignet to the box already. _Tell, Don't Ask_: instead of querying the box for its ID, let it do the creation inside its Aggregate bounds. (In fact, I should've used it in the first iteration, too. Take this as an example of iterating towards expressiveness of the model.)
+* The new `IdentityService` provides `nextBoxId()` and `nextItemId()`, of which the latter will be used during item creation. These are things a Repository could provide, too. But if we pass a Repository to `Box`, what should it be allowed to do? Create? Remove? `IdentityService` limits the power by hiding the Repositories' other methods. That's its sole job.
+* `Box.addItem(_:)` is gone. Items are added to their Repository directly.
+* The event has changed. `ItemProvisioned` doesn't take the box into account anymore. <!--ct: TODO is it a good idea to not include boxId in the event (for convenience) -->
+
+Adding items to the Repository directly has huge consequences concerning obtaining items. No box will know its items by default anymore. Since they can change independently of the box, they have to be obtained through the `ItemRepository`.
+
+The same rationale of `IdentityService` applies: if you query `Box` for Aggregate information, it needs access to the Repository, only without full access to the Repository. The protocol `ProvidesBoxItems` comes into play here. It provides information about items related to a box and is used like so:
+
+    public class Box: NSObject {
+        // ...
+        public func itemsCount(itemProvider: ProvidesBoxItems) -> Int {
+            return itemProvider.count(boxId: boxId)
+        }
+    }
+
+All this double dispatching seems weird at first, but it's okay if we want to keep putting meaningful methods inside `Box`. If we don't, we end up with mere data containers instead of a full-fledged Domain Model. Again, because the example application is so simple, it's hard to come up with really breath-taking features.
+
+So now we understand how items are created and distributed in the two relevant Domain Services `DistributeItem` and `ProvisioningService` in conjunction with the new factory method on `Box`.
+
+Other use cases are handled in a similar fashion.
+
+Before we take a look at other interesting cases, I want to step back a bit. Could things fail even for this simple task? It seems so: concurent threads can interfere with each other during item distribution. So let us discuss race conditions and transactional consistency.
+
+[commit-before]: https://github.com/DivineDominion/mac-multiproc-code/tree/4a0439bbf9e3e628543962ac87c889308b109ea1/RelocationManagerServiceDomain
+
+
+### Services are Prone to Race Conditions
+
+Race conditions occur when the software attempts to perform multiple operations at the same time, but not in the proper sequence, or in such a way that they interfere with each other.
+
+Even in the most simple procedure will you find wiggle room for concurrency-related problems to occur.
 
 Simplified, `distribute(_:)` takes care of the following:
 
@@ -80,17 +446,110 @@ Between steps 1 and 3, a concurrent operation may interfere. Suddenly, the previ
 
 In other words, the data from our store got stale in between.
 
-No matter how we change the code and refactor the design, there's no way to make a single _transaction_ of this. It's always made up of a _read_ operation, and a _write_ operation, with potential for causing trouble in between. It's not a single, atomic operation.
+No matter how we change the code and refactor the design, there's no way to make a single _transaction_ of this from the database point of view. It'll always be made up of a _read_ operation, and a _write_ operation, with potential for causing trouble in between. It's not a single, atomic operation.
+
+Service objects are codified tasks. Some may even represent whole use cases. `DistributeItem` comes pretty close to a simple use case. Most tasks aren't trivial one-liners -- and if they were, would you create a new kind of object for them? Since most tasks consist of multiple steps, they are prone to changes in the context. So watch out whether Services may interfer with each other when their tasks are executed simultaneously.
+
+What can we do to protect against race conditions?
+
+#### Protecting Against Race Conditions Is Not Part of the Domain
 
 The Domain doesn't know anything about race conditions. If you put protection against race conditions into your Domain, you fall for the fallacy [Gojko Adzic calls][gojko] "race conditions hide business rules."
 
-Some or most race conditions are clearly not a sign of a lack of business rules. The business rules don't need to encompass what happens when two threads of your application interfere. The business rules can deal with how to remedy errors people make, or in this case, those your software makes.
+We might be tempted to say: if the task of "distributing an item" may fail because of race conditions, then we have to add means to protect against these into our set of business rules. We discovered a lack of rules through programming. Let's add a new rule, implement it, and move on.
 
-Without software, race conditions wouldn't occur. Consequently, they can't be part of the Domain. To deal with concurrency is a matter of the Application Layer at best.
+However, some or most race conditions are clearly not a sign of a lack of business rules. The business rules don't need to encompass what happens when two threads of your application interfere. The notion of "application" or "thread" is not part of the business. The business deals with providing some kind of solution to a specific problem, and our software is there to automate this and to make it more efficient.
 
-### Recovering From Race Conditions
+Business rules can deal with how to remedy mistakes people make, for example. They cannot deal with the hardware of a particular computer, or with the details of multi-threading. That's a whole different set of problems, namely problems of implementation in code.
 
-Starting simple, there are two paths to take:
+Without software, race conditions wouldn't occur. Consequently, they can't be part of the Domain.
+
+If we had to locate race condition prevention in our architecture, it'd be a matter of the Application Layer at best, since it's the client of the Domain.
+
+So we've pushed the problem out of the Domain. Instead of `DistributeItem`, its client object, called `ManageItems`, will deal with race conditions.
+
+`ManageItems` implements `distributeItem(_:)` to create a bridge into the domain. It basically looks like this:
+
+    public class ManageItems {
+        // ...
+        public lazy var distributionService: DistributeItem = DomainRegistry.sharedInstance.distributeItem()
+    
+        public func distributeItem(title: String) {
+            distributionService.distribute(itemTitle: title)
+        }
+        // ...
+    }
+
+It's rather boring because there isn't much to do for the Application Service in this particular case. To justify having it around in the first place, have a look at another of its methods:
+        
+    // ...
+    public lazy var removalService: RemoveItem = DomainRegistry.sharedInstance.removeItem()
+    
+    public func removeItem(itemIdentifier: IntegerId, fromBoxIdentifier boxIdentifier: IntegerId) {
+        let itemId = ItemId(itemIdentifier)
+        let boxId = BoxId(boxIdentifier)
+        
+        removalService.remove(itemId, fromBox: boxId)
+    }
+    // ...
+
+Here, the Application Service's task is to transform the primitive integer values into Value Objects the Domain understands. Then it invokes the appropriate command handling mechanism: `RemoveItem.remove(_:,_:)`.
+
+The Application Service has to make a transactional consistent process out of this. If removal is started, it should work. No other thread should interfere.
+
+#### Put Sequential Processes on a Shared Queue
+
+Multiple connections from client apps to the XPC service will possibly result in multiple threads on the XPC service process.
+
+One rather simple trick is to make them sequential. Create a queue for the XPC service which all incoming threads will execute their tasks on. The actual order of tasks cannot be determined, but each task will have to be completed before the next is allowed to start. At least it'll suffice to check for valid state once and rely on it until task completion under these circumstances.
+
+Here's the `ManageItems` Application Service after I added the notion of a simplified ["unit of work"](uow):[^fowler2009peaa]
+
+    public class ManageItems {
+ 
+        public lazy var distributionService: DistributeItem = DomainRegistry.sharedInstance.distributeItem()
+        public lazy var removalService: RemoveItem = DomainRegistry.sharedInstance.removeItem()
+    
+        public init() { }
+    
+        public func distributeItem(title: String) {
+            exit
+            ServiceLocator.unitOfWork().execute {
+                self.distributionService.distribute(itemTitle: title)
+            }
+        }
+    
+        public func removeItem(itemIdentifier: IntegerId, fromBoxIdentifier boxIdentifier: IntegerId) {
+            let itemId = ItemId(itemIdentifier)
+            let boxId = BoxId(boxIdentifier)
+        
+            ServiceLocator.unitOfWork().execute {
+                self.removalService.remove(itemId, fromBox: boxId)
+            }
+        }
+    }
+
+It doesn't matter how a unit of work is implemented. The Service simply relies on it to work.
+
+Thanks to Core Data, we can call `performBlock` or `performBlockAndWait` on a `NSManagedObjectContext` to achieve transactional consistency. That's how [this particular `UnitOfWork` object][myuow] works, basically.
+
+Without Core Data, we'd have to use our own serial or private dispatch queue. Give it a name so all threads access the same queue. Enqueue tasks sequentially. Then you're safer than before.
+
+That's about prevention, and it might be all you need, given the task is sufficiently simple.
+
+If this won't work, you need to be able to recover from race conditions.
+
+[uow]: http://martinfowler.com/eaaCatalog/unitOfWork.html
+[myuow]: https://github.com/DivineDominion/mac-multiproc-code/blob/master/RelocationManagerServiceDomain/UnitOfWork.swift
+
+[^fowler2009peaa]: For details on the way more powerful pattern, see Martin Fowler (2009):  _Patterns of Enterprise Application Architecture_, Boston: Addison-Wesley.
+
+
+#### Recovering From Race Conditions
+
+There are two paths you can take to recover from bad state: retry or compensate.
+
+In our application, this means the following:
 
 * **Can we retry?** Only two slots are free, one in each of two boxes. We add two items concurrently. Both get assigned to the same box at first. One item wins by a fraction of a second and gets added to the box. Adding the other fails. Can we retry to add the same item to another box? Yes, and this would totally work as expected.
 * **Can we compensate?** Only one slot is free but we process adding two items. The user things both items are on their way. Can the second item be put into another place? Not yet. Ordering a spare box to take care of the leftover item seems to be out-of-place to me. I'd rather let the item drop than make a surprise box addition. In this rare case, we can also tell the user we're sorry to have accepted the second item although the capacity doesn't suffice, and ask if we should drop it or order a new box. Avoiding data loss is always good.
@@ -99,21 +558,21 @@ Usually, retrying is easy when you return a Boolean to indicate success or failu
 
     for box in allBoxes {
         if box.addItem(item) {
-            exit
+            // Stop trying if it worked once
+            break
         }
     }
 
-This violates the principle of command--query-separation. That's okay, no one will die because of this.
+This violates the principle of command--query-separation. That's okay, no one will die because of this. Someone came up with the principle of separating commands from queries to because this is how your code will become more robust and side-effect free.
 
-We have to ask ourselves if it's worth the trade-off. Someone came up with the principle to state: this is how your code will become more robust and side-effect free. Doing it this way once won't break anything, but it may induce a bad tendency to make your code worse overall. So much for the easy way.
+Doing it the ugly way once won't break anything, but it may induce a bad tendency to make your code worse overall. We have to ask ourselves if it's worth the trade-off. 
 
-Compensating is a bit more tricky. Which part of the application knows how to compensate?
+Compensating is a bit more tricky: Which part of the application will know how to compensate?
 
 Think about the various [flavors of messages][flav] in your code base. There are commands, of which you expect to perform changes. There are queries, which should be strictly side effect-free. There are notifications and events, broadcasting information without expecting any particular reaction.  Notifications are a means to achieve loose coupling between components and consequently cannot expect any reaction.
 
 With our distributed application, spread across various processes, it's natural to go for the latter to inform interested parties (other stand-alone parts of the app) about failing operations. Any part can compensate for the failure as long as it listens for the event.
 
-It's cognitively easier to think of the process in terms of commands between objects, though. It is true for myself, and I bet you feel no different: create a representation once and then pass it down (invoke method on other objects) until it reaches its destination; if processing fails, go back up (`return false`) until someone takes care of handling the failure. This is easy because each method has access to the data in question. That's the benefit of higher coupling: you know what you have, you know what to expect.
 
 Imagine broadcasting events wasn't the exception.
 
@@ -123,7 +582,7 @@ The main app receives an `ItemDistributionDidFail` event. It doesn't know which 
 
 Sending events isn't a matter of seconds or minutes. It's nearly just as fast as sending messages to objects directly. (Of course, there's at least one more hop in between, but that amounts to nothing.)
 
-From a user experience perspective, it doesn't matter whether you couple parts loosely and send events or if you violate the principle of command--query-separation and get feedback immediately. This is all about programmer happiness and higher-quality code.
+From a user experience perspective, it doesn't matter whether you couple parts loosely and send events or if you violate the principle of command--query-separation and get feedback immediately. This is all about increased programmer happiness and higher-quality code while the end result should be the same.
 
 We split up the app into three autonomous components to make the application maintainable. We should continue to strive for the most robust solution. That's why I will explore the event-based path further.
 
@@ -136,8 +595,8 @@ To understand where information about failure could originate, working our way b
 
 * `box.addItem(item)` will fail because `box` protects itself against invalid commands. It sends an `AddingItemDidFail` event.
 * The objective of `ProvisioningService.provisionItem` is not fulfilled. Provisioning failed. But the service doesn't notice after it issued the command to `addItem`. No change here.
-* `DistributionService` receives an `AddingItemDidFail` event. It previously sent off the command to the `ProvisioningService`, so it does care about the success of the operation.
-* `DistributionService` tries to pick another box with enough capacity in it and issues another round of provisioning. It does this every time an `AddingItemDidFail` event happens until all boxes are filled. Then, it will send an `ItemDistributionDidFail` event with all data attached to re-create a similar item. (Let's assume this is the case to go further up.)
+* `DistributeItem` receives an `AddingItemDidFail` event. It previously sent off the command to the `ProvisioningService`, so it does care about the success of the operation.
+* `DistributeItem` tries to pick another box with enough capacity in it and issues another round of provisioning. It does this every time an `AddingItemDidFail` event happens until all boxes are filled. Then, it will send an `ItemDistributionDidFail` event with all data attached to re-create a similar item. (Let's assume this is the case to go further up.)
 * The XPC Service notices the `ItemDistributionDidFail` event. It takes the item data and notifies all connected processes.
 * The status bar helper app receives the notification first. Should it care? Users can add items from within the helper window after all.
 * The main app receives the notification. It responds with an alert dialog to ask the user for intervention.
@@ -145,5 +604,66 @@ To understand where information about failure could originate, working our way b
 Now what if the user's action didn't originate in the main app? What if the main app isn't even running? 
 
 <!--ct: TODO will it suffice to notify only one party?-->
+
+    public class DistributeItem {
+        var eventPublisher: DomainEventPublisher {
+            return DomainEventPublisher.sharedInstance
+        }
+    
+        public init() { }
+    
+        public func distribute(itemTitle title: String, provisioningService: ProvisioningService, boxRepository repository: BoxRepository) {
+        
+            if let box = boxes(fromRepository: repository).first {
+                provisioningService.provisionItem(title, inBox: box)
+                return
+            }
+        
+            eventPublisher.publish(BoxItemDistributionFailed(itemTitle: title))
+        }
+    
+        func boxes(fromRepository repository: BoxRepository) -> [Box] {
+            return repository.boxes().filter { box in
+                return box.canTakeItem()
+            }.sorted { (one, other) -> Bool in
+                    return one.itemsCount < other.itemsCount
+            }
+        }
+    }
+    
+    public class ManageItems {
+    
+        var eventPublisher: DomainEventPublisher {
+            return DomainEventPublisher.sharedInstance
+        }
+    
+        public lazy var repository: BoxRepository = ServiceLocator.boxRepository()
+        public lazy var provisioningService: ProvisioningService = ProvisioningService(repository: self.repository)
+        public lazy var distributionService = DistributeItem()
+    
+        public init() {
+            self.subscribeToBoxItemAddingFailed()
+        }
+    
+        var addingBoxItemFailedSubscriber: DomainEventSubscriber!
+    
+        func subscribeToBoxItemAddingFailed() {
+            // If adding failed, simply re-try distribution.
+            // Assumes DistributeItem doesn't try if there's no room.
+            addingBoxItemFailedSubscriber = eventPublisher.subscribe(AddingBoxItemFailed.self) {
+                [unowned self] event in
+            
+                self.distributeItem(event.itemTitle)
+            }
+        }
+    
+        public func distributeItem(title: String) {
+            distributionService.distribute(itemTitle: title, provisioningService: provisioningService, boxRepository: repository)
+        }
+    
+        public func removeItem(itemIdentifier: IntegerId, fromBoxIdentifier boxIdentifier: IntegerId) {
+        
+        }
+    }
 
 ## Implement the XPC interfaces
