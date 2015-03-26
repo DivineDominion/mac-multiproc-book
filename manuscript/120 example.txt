@@ -29,7 +29,7 @@ Instead of just hacking XPC services together, we'll figure out the exact requir
 
 To design an application well, it doesn't help to just pretend we know what we're going to do. This is an authentic book. So let's figure out what the components of the app need from a very high-level perspective.
 
-## User interaction stories
+## User interaction stories {stories}
 
 Here's a brief summary of the interaction we are going to aim for. I have italicized key terms which will be part of our **Ubiquituous Language**. That's our own project-scope lingo. It'll determine the name of methods and **Entities** in our code.
 
@@ -37,10 +37,10 @@ Most of the time, only the menu bar widget will be active. The user won't have t
 
 <!--ct: TODO add sketches of menu bar widget: free space VS full-->
 
-If there's room for one or more _items_, the widget will offer a quick-entry panel to _add_ a new item to the _set of boxes_. If there's no _capacity_ left, though, a warning is presented, issuing the user to open the manager and _order_ new boxes.
+If there's room for one or more _items_, the widget will offer a quick-entry panel to _add_ a new item of a user-specified _title_ to the _set of boxes_. If there's no _capacity_ left, though, a warning is presented, issuing the user to open the manager and _order_ new boxes.
 
 <!--ct: TODO add sketches of main list-->
-In the manager app, the user can see the list of existing boxes and their contents. The user may _assign_ labels to boxes. She can also _remove_ items at will. She can _remove_ boxes only if they're empty or the contents can be distributed accross leftover boxes.
+In the manager app, the user can see the list of existing boxes and their contents. The user may _assign_ labels to boxes. She can also _remove_ items at will. She can _remove_ boxes only if they're empty or the contents can be distributed among leftover boxes.
 
 <!--ct: TODO add sketch of box-add dialog-->
 The user can _order_ more boxes at will, specifying the optional label and capacity of the box. Boxes come in sizes to carry 5, 10, or 20 items.

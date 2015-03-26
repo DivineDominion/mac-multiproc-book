@@ -65,13 +65,154 @@ After starting with the Aggregates, this chapter will put some Domain Services i
 
 ### Starting with the Aggregates
 
+Boxes contain items. So it is natural to start with the `Box` Aggregate. Although `Item` is its own Entity, items will be accessed through the means of a box object only.
 
+Compare the following two examples in respect to their expressiveness:
+
+{linenos=no}
+    // 1
+    itemRepository.itemsWithBoxId(boxId)
+    // 2
+    box.items()
+
+The first query isn't convoluted or anything, but you'd have to know what a Repository is, and that you can obtain items from there with a filter for those matching the criteria of belonging to a box with a given `boxId`.
+
+The second query is much more expressive because the context is clear. We get all items of a box, duh!
+
+Expressiveness is one of the main advantages of using a Domain Model instead of mere data containers and some means to read data from file or database.
+
+We are going to aim for an expressive Model to make the code easy to read and easy to reason about.
+
+#### Revisiting User Stories
+
+In the [introducing section on user stories](#stories), the application specification was quite clear already. Here are the condensed versions, with all details about which tool does what stripped away:
+
+- There's a _total capacity_ of all existing _boxes_.
+- The user can _order_ new boxes with a _box capacity_ of 5, 10, or 20 items to increase total capacity.
+- If `total capacity > 0`, the user can _add_ a new item. Items are _distributed_ among existing boxes evenly.
+- The user can _remove_ items from boxes at will.
+- The user can _remove_ boxes only if they're empty or the contents can be _re-distributed_ among leftover boxes.
+- Boxes can be _assigned_ a custom _label_. (They have a default label otherwise.)
+- Items have a required _title_.
+
+These terms become part of our Ubiquitous Language and help create an expressive Domain Model.
+
+#### Modeling the `Box` Aggregate According to User Stories
+
+This is a stripped-down prototype of what Box may look like:
+
+    class Box {
+        let boxId: BoxId
+        
+        // Box label
+        private(set) var label: String
+        func assignLabel(label: String) { ... }
+        
+        // Box capacity
+        let capacity: BoxCapacity
+        var remainingCapacity: Int { ... }  // computed property: capacity - itemsCount
+        
+        func canTakeItem() -> Bool { ... } // if remainingCapacity > 0
+
+        init(boxId: BoxId, capacity: BoxCapacity, label: String) { ... }
+        
+        // Contained items
+        private var items: [Item] = []
+        var itemsCount: Int { ... }  // computed property
+        
+        func addItem(item: Item) { ... }
+        func item(#itemId: ItemId) -> Item? { ... }
+        func removeItem(#itemId: ItemId) { ... }
+    }
+
+It takes care of and protects its invariants. You shouldn't be able to change its properties willy-nilly.
+
+For example, `box.items.append(item)` would not match the user story in expressiveness: Nowhere did we say "appending" in our user stories. It's too explicit on the side of implementation, while obscuring the intent. The user story doesn't care if we use an array (to which we have to _append_) or an unordered set (to which we can simply _add_) internally. Conversely, client objects shouldn't have to worry about these implementation details. 
+
+For client code, `Box` exposes collection-like methods. It behaves like an unordered collection itself, and for the sake of its clients, it is nothing more but a labeled collection with a cap on the element count.
+
+The `items` array is private for this exact reason: to protect a box from external changes. All changes to the Aggregate composite have to flow through the root's public interface.
+
+The `Item` class is pretty dumb in comparison:
+
+    public class Item: NSObject {
+        let itemId: ItemId
+        let title: String
+    
+        init(itemId: ItemId, title: String) { ... }
+    }
+
+Both `Box` and `Item` are implemented in a straightforward manner. There's no magic taking place anywhere, so I leave the code out. Since an item can only be fetched through a box, I didn't include a backward relationship to `Box` in `Item`. It wouldn't ever be used anyway.[^201503241555]
+
+[^201503241555]: You can find the code [as of March 4th, 2015](https://github.com/DivineDominion/mac-multiproc-code/tree/4a0439bbf9e3e628543962ac87c889308b109ea1/RelocationManagerServiceDomain), on Github. In yet upcoming commits, the interface will change. We will focus on the changes in subsequent sections of this chapter.
+
+#### Identifier Value Objects
+
+The interesting thing about Entities is their identity. Entities change. Values, on the other hand, are replaced.
+
+Common examples of custom Value Objects are: money and currency, weight, length and units of length. Real-world stuff mostly. You could represent an amount of money as a double, but you better create a dedicated structure to help you with currency conversion. From Cocoa, you may now `NSDateComponents`, although this class breaks the convention of value immutability. Wherever you design Value Objects to be immutable, you close a door for bugs. 
+
+With Swift, we have to write a lot less Value Objects ourselves in simple applications.
+
+Before Swift, you had to create your own `Boxes` class (note the plural!) as a wrapper around `NSArray` to take only items which inherit from `Box` or `Box` objects themselves. There was no other way to ensure a collection wasn't dirtied. Thanks to generics, we can specify the kind of object an array should accept.
+
+This mostly leaves identifiers for our case.
+
+I prefer 64bit integer UUIDs to string-based UUIDs because they take up less space. Because we use both `BoxId` and `IntegerId` to identify Entities, a common protocol can aid us in pointing out similarities and writing identifier generators later on:
+
+    public typealias IntegerId = Int64
+
+    public protocol Identifiable {
+        var identifier: IntegerId { get }
+        init(_ identifier: IntegerId)
+    }
+
+Now have a look at one concrete identifier, `ItemId`:
+
+    public struct ItemId: Identifiable, Equatable, Hashable {
+        public let identifier: IntegerId
+    
+        // convenience for serialization to dictionary
+        public var number: NSNumber { return NSNumber(longLong: identifier) }
+    
+        public init(_ identifier: IntegerId) {
+            self.identifier = identifier
+        }
+    
+        init(_ identifierNumber: NSNumber) {
+            self.identifier = identifierNumber.longLongValue
+        }
+    
+        public var hashValue: Int {
+            return self.identifier.hashValue
+        }
+    }
+    
+    public func ==(lhs: ItemId, rhs: ItemId) -> Bool {
+        return lhs.identifier == rhs.identifier
+    }
+
+`BoxId` is mostly the same, but in this case code duplication doesn't mean we miss an abstraction. `BoxId` and `ItemId` shouldn't change together as long as the `Identifiable` protocol didn't change, so there's just no wiggle-room left for another level of abstraction.
+
+So that's what identifiers do: they just are, and they can be compared to other instances for equality. This way, they represent a means to identify an Entity.
+
+From a programmer perspective, they're a wrapper around 64bit integer UUIDs. But that's not what they are in respect to the Domain.
+
+That's it for the inner core already. We've got two Entity types, one being root of the sole Aggregate in the Domain. And we've got identifier Value Objects. What's left is a representation of the means to actually modify the system.
+
+What's left is Domain Services to implement the user stories.
 
 ### `DistributItem`s Among all Existing Boxes
 
 The command we will look at is `DistributeItem`. It takes an item's title, creates the item, and puts the new item into a box that can actually hold the item.
 
-There are obvious guard clauses: if there are no boxes, fail. If all boxes are full, fail. Instead of making these checks guard clauses up front, though, we can put the set of all boxes through a few filter mechanisms:
+On the way, we will take a look at creating Entities. And we'll refactor our core Domain to accommodate a simple fact I overlooked so far: moving items is possible only if an item becomes independent from its box in some cases. It has to be part of another Aggregate, without destroying the old one, though.
+
+But first, let us find out how Domain Services come into play.
+
+`DistributeItem`'s job is to create a new item and put it somewhere. Simple as that.
+
+There are obvious guard clauses: if there are no boxes, fail. If all boxes are full, fail. Instead of making these checks individual guard clauses up front, though, we can put the set of all boxes through a few filter mechanisms and see what's left:
 
     public class DistributeItem {
         let repository: BoxRepository
@@ -89,6 +230,7 @@ There are obvious guard clauses: if there are no boxes, fail. If all boxes are f
             // failure
         }
         
+        /// Retrieve all non-full boxes, sorted by remaining capacity
         func boxes() -> [Box] {
             return repository.boxes().filter { box in
                 return box.canTakeItem()
@@ -100,52 +242,53 @@ There are obvious guard clauses: if there are no boxes, fail. If all boxes are f
 
 This does the following:
 
-1. Fetch all boxes, out of any order.
-2. Remove all filled boxes.
-3. Sort remaining boxes by the amount of items they contain.
-4. Pick the first one from the stack, that is the box with the least items in it.
+1. Fetch all boxes, out of any order, via `repository.boxes()`.
+2. Remove all filled boxes from the result via `filter()`.
+3. Sort remaining boxes by the amount of items they contain via `sorted()`.
+4. Pick the first one from the stack, that is the box with the least items in it, if possible.
 
-Although using `filter()` and `sorted()` may look uncanny to the untrained eye, you can read the code from top to bottom and see what is done. 
+Although using `filter()` and `sorted()` may look uncanny to the untrained eye, you can read the code from top to bottom and see what is done. If nothing satisfies the filter criteria, the resulting array will be empty. Simple as that.
 
-I didn't add a method like `boxesSortedByItemCount()` to the `BoxRepository` because its used in only this one particular place. If it were used more often, I'd definitely move this utility method into the repository class.
+This functional approach sometimes is superior to explicit guard clauses which abort method execution. It this case, we don't have to first see whether there are any boxes in the Repository at all (or abort), then iterate over all boxes and see whether one or more have room for another item (or abort), and then trim and sort the set. Instead, we filter the set according to our needs and bring it into order.
 
-We don't even lose an opportunity to optimize for fetching. Our concrete Core Data repository cannot sort by the amount of connections from box to items while fetching. It cannot even filter out full boxes. The predicate to achieve the latter is `items.@count`, an aggregate function, which in this special case requires the object to be fetched prior to sorting (or filtering). After fetching, this will work.
+I didn't add a convenience method like `boxesSortedByItemCount()` to the `BoxRepository` because its used in only this one particular place. If it were used more often, I'd definitely move this utility method into the Repository class. For now, let's stick to the minimum amount of deviation from a pure specification-driven Domain.
 
-Since there's not even a performance gain of putting the filtering into the Repository in this concrete case, I decided to keep everything in `DistributeItem`.
+A convenience method on `BoxRepository` wouldn't even allow fetch optimizations in our case. Core Data cannot sort by the amount of connections from box to items while fetching. It cannot even filter out full boxes. The predicate to achieve the latter is `items.@count`, a so-called aggregate function. You can express this in `NSPredicate`, but you have to fetch the objects and their resulting relationships before applying the filter predicate. So after fetching, either `NSPredicate` filtering and our functional array  filters will work. I rather stick to the latter because I find it more expressive.
+
 
 #### Handling Success and Failure Scenarios
 
 The operation can fail. So there's two possible outcomes. We need to deal with both and figure out how to communicate what has happened to the client app.
 
-We could return a boolean. `distribute(_:)` is a command, though, so it shouldn't return a value. But it might work okay.
+Return values and callbacks come to mind.
+
+We could return a boolean. `distribute(_:)` is a command, though, so it shouldn't return a value. But returning `true` or `false` might do the job without dealing much damage.
 
 We could add a `successCallback: () -> ()` and a `noCapacityCallback: () -> ()` parameter, for example. But I think the callback blocks are disproportionate to the effect we want to achieve. After all, `DistributeItem` isn't even in the outermost layer. The callbacks will be provided by Services in the Application Layer -- and then the Application Service will have to figure out how to report success/failure to _its_ caller, and so on.
 
 Returning a boolean has a similar disadvantage: you have to pass the result all the way up the call chain to the client somehow.
 
-That's the benefit of higher coupling: you know what you have, you know what to expect. It also limits our ways out tremendously.
+That's the benefit of higher coupling: you know what you have, and you know what you will get. But then you just have this one way to deal with failure: by passing the result around like a hot potato.
 
-Instead of passing the result of the operation up all the way of the call chain, what else could we do?
+Instead, understand _why_ we want to couple and return the result of a potentially failing operation, first. Maybe we can find another way afterwards.
 
-First, understand why we want to couple strong and return the result of a potientally failing operation. The usual tactics for communicating results centers around _immediacy_: you call a method, you expect a reaction.
+The usual tactics for communicating results centers around _immediacy_: you call a method, you expect a reaction. This is a synchronous operation. The concept is easy to learn and easy on the mind while reading code.
 
-If you separate commands from queries, you won't allow commands to communicate the result via return values. Commands are there to produce change only.
+If you separate commands from queries, you won't allow commands to communicate the result via return values. Commands are there to produce change only. Now you end up with easy-to-understand operations on one side, and a promise to keep your code and your application in shape for a long time on the other.
 
-But we're trained (and spoilt) to expect something similar to a query's response, so we want to design objects to react immediately, so we create client code like this: Call a method, expect change, check the outcome, act accordingly.
+We're trained and spoilt to expect something similar to a query's response, with results returning synchronously. That's a reason we want to design objects to react immediately. We end up creating client code like this all over the place: Call a method, expect change, check the outcome, react accordingly. And because we design our objects to return something after commands, we keep the habit.
 
-Here's an exercise. How can you model a process where you issue commands to _Bar_ from _Foo_ but don't act on the change _Bar_ produced directly from within _Foo_?
-
-I think it works exceptionally well to let a totally unrelated object react to the change.
+The need to react to change in appropriate moments can be fulfilled by objects which are not the calling object itself. How's that?
 
 Enter the wonderful world of Domain Events and notifications.
 
 #### Introducing (Domain) Events
 
-We can decouple command execution from response handling through events. The benefit to directly sending messages as methods is that we don't have to know the interested parties. Even if in fact only one subscriber exists per message, the benefit of hiding its existence from the sender can be worth the effort.
+We can decouple command execution from response handling through events. The benefit to directly sending messages as methods is that we don't have to know the interested parties. Even if in fact only one subscriber exists per message, the benefit of hiding its existence from the sender can be worth the effort. We don't design the sender to accommodate the receiver and increase coupling implicitly.
 
-Cocoa spoils us: `NSNotificationCenter` works just great. The only thing you have to take care of is sending a notification of the right `name` with sufficient `userInfo`. This is error-prone, because only in runtime will we find whether we forgot to add an expected key-value-pair to the `userInfo` dictionary.
+Cocoa spoils us: `NSNotificationCenter` works just great. The only thing you have to take care of is sending a notification of the right `name` with sufficient `userInfo`. This is error-prone, because only in runtime will we find whether we forgot to add an expected key-value-pair to the `userInfo` dictionary. So we will fix that.
 
-We can let the compiler help us in sending events with all necessary data by wrapping them in custom structures.
+We can let the compiler help us in sending events with all necessary data by wrapping notifications in custom data structures, or Value Objects.
 
 ##### The `ItemDistributionFailed` Event
 
@@ -220,7 +363,7 @@ To create other events in the future, here's the `DomainEvent` protocol which sp
 
 ##### The `DomainEventPublisher` and its `DomainEventSubscription`
 
-`DomainEventPublisher` is a wrapper around sending `NSNotification` objects through a common `NSNotificationCenter`. The nice thing about this is that you can replace either the `DomainEventPublisher` during unit tests or create per-test `NSNotificationCenter` objects to verify actual delivery of the event.
+`DomainEventPublisher` is a wrapper around sending `NSNotification` objects through a common `NSNotificationCenter`. The nice thing about this is that you can replace either the `DomainEventPublisher` during unit tests or create per-test `NSNotificationCenter` objects to verify actual event delivery.
 
 At its core, it looks like this:
 
@@ -351,7 +494,7 @@ In that case, finding a box prior to creating an item is not necessary anymore. 
 
 It doesn't make sense to call it "distribution" anymore, does it?
 
-We are reasoning about the responsibilites or concerns of `DistributeItem`. I am a strong proponent of the [Single Responsibility Principle][srp]. Objects with multiple responsibilities are harder to reason about, harder to change, and thus harder to keep around. So we are going to aim to create objects which do only one thing, and not many.
+We are reasoning about the responsibilities or concerns of `DistributeItem`. I am a strong proponent of the [Single Responsibility Principle][srp]. Objects with multiple responsibilities are harder to reason about, harder to change, and thus harder to keep around. So we are going to aim to create objects which do only one thing, and not many.
 
 The concern of `DistributeItem` is stated clearly thanks to the object's name: it distributes a new item. To find out which parts of a complex process belong here and not somewhere else, simply ask yourself: is this about distribution or about something else? If distribution was gone, should this other thing be gone too? If X does change, should Y change as well?
 
@@ -431,7 +574,7 @@ With two Aggregates instead of one, the process changes quite a bit. Here is the
 
 In detail, the changes include:
 
-* `Box` has a factory method `item(_:,identityService:)` to create an object which is assignet to the box already. _Tell, Don't Ask_: instead of querying the box for its ID, let it do the creation inside its Aggregate bounds. (In fact, I should've used it in the first iteration, too. Take this as an example of iterating towards expressiveness of the model.)
+* `Box` has a factory method `item(_:,identityService:)` to create an object which is assigned to the box already. _Tell, Don't Ask_: instead of querying the box for its ID, let it do the creation inside its Aggregate bounds. (In fact, I should've used it in the first iteration, too. Take this as an example of iterating towards expressiveness of the model.)
 * The new `IdentityService` provides `nextBoxId()` and `nextItemId()`, of which the latter will be used during item creation. These are things a Repository could provide, too. But if we pass a Repository to `Box`, what should it be allowed to do? Create? Remove? `IdentityService` limits the power by hiding the Repositories' other methods. That's its sole job.
 * `Box.addItem(_:)` is gone. Items are added to their Repository directly.
 * The event has changed. `ItemProvisioned` doesn't take the box into account anymore. <!--ct: TODO is it a good idea to not include boxId in the event (for convenience) -->
@@ -453,7 +596,7 @@ So now we understand how items are created and distributed in the two relevant D
 
 Other use cases are handled in a similar fashion.
 
-Before we take a look at other interesting cases, I want to step back a bit. Could things fail even for this simple task? It seems so: concurent threads can interfere with each other during item distribution. So let us discuss race conditions and transactional consistency.
+Before we take a look at other interesting cases, I want to step back a bit. Could things fail even for this simple task? It seems so: concurrent threads can interfere with each other during item distribution. So let us discuss race conditions and transactional consistency.
 
 [commit-before]: https://github.com/DivineDominion/mac-multiproc-code/tree/4a0439bbf9e3e628543962ac87c889308b109ea1/RelocationManagerServiceDomain
 
@@ -476,7 +619,7 @@ In other words, the data from our store got stale in between.
 
 No matter how we change the code and refactor the design, there's no way to make a single _transaction_ of this from the database point of view. It'll always be made up of a _read_ operation, and a _write_ operation, with potential for causing trouble in between. It's not a single, atomic operation.
 
-Service objects are codified tasks. Some may even represent whole use cases. `DistributeItem` comes pretty close to a simple use case. Most tasks aren't trivial one-liners -- and if they were, would you create a new kind of object for them? Since most tasks consist of multiple steps, they are prone to changes in the context. So watch out whether Services may interfer with each other when their tasks are executed simultaneously.
+Service objects are codified tasks. Some may even represent whole use cases. `DistributeItem` comes pretty close to a simple use case. Most tasks aren't trivial one-liners -- and if they were, would you create a new kind of object for them? Since most tasks consist of multiple steps, they are prone to changes in the context. So watch out whether Services may interfere with each other when their tasks are executed simultaneously.
 
 What can we do to protect against race conditions?
 
@@ -781,7 +924,7 @@ After a few iterations in designing the message flow, I came up with the followi
 
 Double dispatch again, not doing much else here within `Box`.
 
-Again, I'm passing the call through like this to achive two things. First, I want to keep `Box` expressive through intention revealing method names, even though `Box` needs a helper for a lot of the tasks. Second, I want to adhere to the principles of _East-Oriented Code_ and _Tell, Don't Ask_ first and see how things go afterwards.
+Again, I'm passing the call through like this to achieve two things. First, I want to keep `Box` expressive through intention revealing method names, even though `Box` needs a helper for a lot of the tasks. Second, I want to adhere to the principles of _East-Oriented Code_ and _Tell, Don't Ask_ first and see how things go afterwards.
 
 If it becomes too clumsy to use, I model the process differently.
 
@@ -847,7 +990,7 @@ That's not much of an algorithm so far. `moveItems` is where the actual processi
 
 Did you notice that I pass the box to be dissolved around everywhere, even in the scope of these objects? I avoid stateful Services to keep only a single instance around at best. Also, not having state in an object means it cannot be broken. Services become containers of mere functions and provide a bit of context, like which Repositories to use.
 
-The `moveItems` algorithm has a big pain point: in line 5, it fetches and filters all boxes during every iteration of the loop. This is quite a waste, but I don't expect much of a difference if I optimized this. With the current specification, a box may contain no more than 30 items. This is an easy way to ensure that for every item, there's a box with some capacity available. The data cannot get stale this way.
+The `moveItems` algorithm has a big pain point: in line 5, it fetches and filters all boxes during every iteration of the loop. This is quite a waste, but I don't expect much of a difference if I optimized this. With the current specification, a box may contain no more than 20 items. This is an easy way to ensure that for every item, there's a box with some capacity available. The data cannot get stale this way.
 <!--ct: TODO check line number-->
 
 `redistributeItems` has checked if the total remaining capacity is sufficient already. But we cannot yet assume that things haven't changed. This Domain Service won't (and shouldn't) deal with race conditions, so if somehow the remaining total capacity changed to the worse while looping through all items, and if one or more items cannot be moved due to a lack of spare capacity, then the box won't be empty afterwards.
@@ -856,7 +999,7 @@ That's okay for the scope of the `RedistributesItems` protocol. It tries to deli
 
 In fact, you could argue that `RedistributesItems` should simply try to move as many items as possible, and that the check for sufficient remaining capacity before trying to move items is unnecessary. I'd say that redistribution does entail all of a box's contents, though, or we'd have to call it "redistribute as many items as possible" instead. "To redistribute" implies success already. Just like you cannot say you "found a coin" without actually having seen (and maybe picked up) a coin, you cannot redistribute items without actually moving all items. With expressive design, a lot of the decisions are decisions about language.
 
-In fact, the Uniquitous Language is a key component of Domain-Driven Design which we try to apply here. It's expressed in the specifications very well already. When we model software, we have to listen to the concepts and help make them as specific as possible to contribute to the model in code. The Domain Model should resemble the mental model of the problem space.
+In fact, the Ubiquitous Language is a key component of Domain-Driven Design which we try to apply here. It's expressed in the specifications very well already. When we model software, we have to listen to the concepts and help make them as specific as possible to contribute to the model in code. The Domain Model should resemble the mental model of the problem space.
 
 
 ## Implement the XPC interfaces
