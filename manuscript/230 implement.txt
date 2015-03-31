@@ -61,12 +61,12 @@ This doesn't work in our case since we automate launching the process and keep t
 
 To not only stop execution (which results in relaunching the Agent) but remove the Agent from the list (like `unload` does usually), you have to use the `remove` command. `launchctl remove` removes not by file name, but by service name. In my case, I stop and get rid of the helper process with the following command from the Terminal:
 
-{linenos=no}
+{linenos=off}
     launchctl remove FRMDA3XRGC.de.christiantietze.multiproc.Helper
 
 To make changes take effect after building a new version of the helper, `stop` will suffice to reload the service, though:
 
-{linenos=no}
+{linenos=off}
     launchctl stop FRMDA3XRGC.de.christiantietze.multiproc.Helper
 
 You can automate this with Xcode build scripts to get rid of the helper with every run. This is especially useful for the early development.
@@ -86,7 +86,7 @@ To set up the `NSXPCConnection`, we need to supply a protocol to communicate wit
 
 I like to give protocols names which state capabilities. Instead of `XPCHelperProtocol` or something I am going to use `ProvidesCounts` for now:
 
-{linenos=no}
+{linenos=off}
     @protocol ProvidesCounts
     - (void)currentCountWithReply:(void (^)(NSUInteger))reply;
     @end
@@ -97,7 +97,7 @@ The helper's target, being Objective-C anyway, can simply import the file.
 
 The Swift target, though, needs bridging headers. They are used to import Objective-C stuff into the Swift module. Create a file called `<app-product-name>-Bridging-Header.h` in the Swift app module. In my case, this is called `MultiProcCounter-Bridging-Header.h`, with "MultiProcCounter" being the target's and the bundle's name. Next, modify this target's build settings. Search for "bridging headers" and set "Objective-C Bridging Headers" of the product to `<product-path>/<product-name>-Bridging-Header.h`. In my case, this is `MultiProcCounter/MultiProcCounter-Bridging-Header.h`. The path is relative to the group. Usually, the folder is called the same as the product/target when you create it. Now, import the protocol in this bridging header:
 
-{linenos=no}
+{linenos=off}
     #import "ProvidesCounts.h"
 
 That's it for the Swift-based target.
@@ -327,13 +327,13 @@ Bi-directional XPC Connections are symmetrical. Both specify their expectations 
 
 So far, on the client side, things looks like this:
 
-{linenos=no}
+{linenos=off}
     connection.remoteObjectInterface = NSXPCInterface(`protocol`: ProvidesCounts.self)
     connection.resume()
 
 And on the server side:
 
-{linenos=no}
+{linenos=off}
     newConnection.exportedInterface = NSXPCInterface(`protocol`: ProvidesCounts.self)
     var exportedObject = TheHelper()
     newConnection.exportedObject = exportedObject

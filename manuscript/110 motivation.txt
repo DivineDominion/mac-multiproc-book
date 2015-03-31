@@ -184,7 +184,7 @@ If you download apps from the Mac App Store, they reside in `/Applications` and 
 
 Check your app's Gatekeeper assessment with the following command:
 
-{linenos=no}
+{linenos=off}
     spctl --assess -vvvv /path/to/your/application.app
     spctl --assess -vvvv /path/to/your/application.app/or/helper.app
 

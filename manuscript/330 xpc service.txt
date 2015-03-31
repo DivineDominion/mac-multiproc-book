@@ -69,7 +69,7 @@ Boxes contain items. So it is natural to start with the `Box` Aggregate. Althoug
 
 Compare the following two examples in respect to their expressiveness:
 
-{linenos=no}
+{linenos=off}
     // 1
     itemRepository.itemsWithBoxId(boxId)
     // 2
@@ -786,7 +786,7 @@ A straightforward Domain Service is `RemoveItem`. It checks whether the command 
 
 It's a pattern similar to `DistributeItem`:
 
-{linenos=no}
+{linenos=off}
     public class RemoveItem {
         // ...
         public func remove(itemId: ItemId, fromBox boxId: BoxId) {
