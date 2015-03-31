@@ -1,3 +1,3 @@
--# Programming the Multi-Process App
+-# Programming the Multi-Process App {#part_program}
 
 In this part, we'll focus on writing the code for our application. I advocate an outside-in approach, where we'll start with user-facing components to not couple our user interface too tightly to the Domain representation. The XPC service will come last, actually.

@@ -1,5 +1,29 @@
 -# Introduction
 
-## Reading the book
+## A Note on this Preview Version
 
-* uppercase denotes a pattern name; first time appearance is emboldened. Examples: **Entity**, Repository, Ubiquituous Language, **Factory**, Value Object.
+Thanks for buying this book in its "beta" version. You'll receive free lifetime updates to this book. I expect to finish the text and code by summer 2015. Until then, consider us a team to finish this thing.
+
+I decided to include all chapters and sections in this preview even though I haven't written a single word for them so you can get a glimpse of what's coming next.
+
+For this book project, I want to be as open as possible from the very beginning. I want to incorporate your valuable feedback to write the best book on the topic _you_ could ever own.
+
+* Send feedback to <mailto:hi@christiantietze.de>
+* Contribute to the [book manuscript][manu] on GitHub
+* Contribute to the [sample code][manu] on GitHub
+
+## How to Read the Book
+
+I wrote this book systematically. You can read from start to finish and follow the planning and development process. If you're interested in code, jump right ahead to [part 3](#part_program).
+
+These are the parts, in short:
+
+1. Why separate an application into multiple processes? What are the conceptual and practical gains?
+2. Solving the problem of inter-process communication: what are your options, and why I think you should pick XPC.
+3. How to write software made up of components. Writing the user interface apps and the XPC background service.
+4. Discussion of the findings.
+5. Appendix, with interesting links and books to read, and general troubleshooting advice.
+
+There'll be a lot of references to software architecture and design patterns. As a convention, uppercase denotes a pattern name, and its first time appearance is emboldened. Examples: **Entity**, Repository, Ubiquituous Language, **Factory**, Value Object.
+
+

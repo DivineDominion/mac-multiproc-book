@@ -29,7 +29,7 @@ Instead of just hacking XPC services together, we'll figure out the exact requir
 
 To design an application well, it doesn't help to just pretend we know what we're going to do. This is an authentic book. So let's figure out what the components of the app need from a very high-level perspective.
 
-## User interaction stories {stories}
+## User interaction stories {#stories}
 
 Here's a brief summary of the interaction we are going to aim for. I have italicized key terms which will be part of our **Ubiquituous Language**. That's our own project-scope lingo. It'll determine the name of methods and **Entities** in our code.
 
