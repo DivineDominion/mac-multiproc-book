@@ -10,7 +10,10 @@ For this book project, I want to be as open as possible from the very beginning.
 
 * Send feedback to <mailto:hi@christiantietze.de>
 * Contribute to the [book manuscript][manu] on GitHub
-* Contribute to the [sample code][manu] on GitHub
+* Contribute to the [sample code][sample] on GitHub
+
+[manu]: https://github.com/DivineDominion/mac-multiproc-book
+[sample]: https://github.com/DivineDominion/mac-multiproc-code
 
 ## How to Read the Book
 
