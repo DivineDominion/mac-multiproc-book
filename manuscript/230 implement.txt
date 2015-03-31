@@ -77,7 +77,7 @@ By now, both app targets should compile. They don't do anything, though. You sho
 
 I will guide you through the process of creating your own interacting processes from scratch in this section.
 
-If you want to have a look at the outcome of this only and find the step-by-step guide too long, just download the [demo app's code after the adaptation from GitHub]201501221730github and look at the result. See you in [the next section](#sec:xpcconcepts)!
+If you want to have a look at the outcome of this only and find the step-by-step guide too long, just download the [demo app's code after the adaptation from GitHub]201501221730github and look at the result. See you in [the next section](#sec_xpcconcepts)!
 
 
 ### Define a shared protocol
@@ -304,7 +304,7 @@ If you didn't follow along in your code, check out the demo app [with changes th
 
 [201501221730github]: https://github.com/DivineDominion/mac-multiproc-code/tree/001-xpc-bootstrapping
 
-## XPC API Concepts {#sec:xpcconcepts}
+## XPC API Concepts {#sec_xpcconcepts}
 
 So far, we've managed to get a project with a logon helper service up and running. We connected the application (the client) to the XPC service.
 

@@ -58,7 +58,7 @@ Every item may appear only once. If the user has two items with the same name, t
 
 A lot of the processes, the business rules, are stated in the last section already, like how removing non-empty boxes should be handled. I won't repeat them here.
 
-Notice that [we have decided early-on](#subsec:separatconcerns) none of the user-facing components manage data directly. They access the shared data store via the background service only.
+Notice that [we have decided early-on](#subsec_separateconcerns) none of the user-facing components manage data directly. They access the shared data store via the background service only.
 
 This wasn't a demand-driven decision but rather part of this book's purpose. Examples have to be lacking in some way. In this case, I favor sensible features so you can apply them in your own work over a 100% coherent app design story.
 
