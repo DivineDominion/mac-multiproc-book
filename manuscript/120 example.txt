@@ -62,4 +62,4 @@ Notice that [we have decided early-on](#subsec_separateconcerns) none of the use
 
 This wasn't a demand-driven decision but rather part of this book's purpose. Examples have to be lacking in some way. In this case, I favor sensible features so you can apply them in your own work over a 100% coherent app design story.
 
-So, both the menu bar widget and the manager app don't need to know much about the domain model. They mostly need data to display stuff. We will discuss this further in the next part, when it comes to architecture and [Bounded Contexts](#sec:boundedcontexts).
+So, both the menu bar widget and the manager app don't need to know much about the domain model. They mostly need data to display stuff. We will discuss this further in the next part, when it comes to architecture and [Bounded Contexts](#sec_boundedcontexts).
