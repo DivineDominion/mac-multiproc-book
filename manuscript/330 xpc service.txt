@@ -97,7 +97,7 @@ In the [introducing section on user stories](#stories), the application specific
 
 These terms become part of our Ubiquitous Language and help create an expressive Domain Model.
 
-#### Modeling the `Box` Aggregate According to User Stories
+#### Modeling the Box Aggregate According to User Stories
 
 This is a stripped-down prototype of what Box may look like:
 
@@ -202,7 +202,7 @@ That's it for the inner core already. We've got two Entity types, one being root
 
 What's left is Domain Services to implement the user stories.
 
-### `DistributItem`s Among all Existing Boxes
+### `DistributeItem` -- Domain Service to Create New Items
 
 The command we will look at is `DistributeItem`. It takes an item's title, creates the item, and puts the new item into a box that can actually hold the item.
 
@@ -293,8 +293,7 @@ Cocoa spoils us: `NSNotificationCenter` works just great. The only thing you hav
 We can let the compiler help us in sending events with all necessary data by wrapping notifications in custom data structures, or Value Objects.
 
 
-
-##### The `ItemDistributionFailed` Event
+##### The ItemDistributionFailed Event
 
 Here's my take on the failure event, `ItemDistributionFailed`, as a template for Domain Events:
 
@@ -365,7 +364,7 @@ To create other events in the future, here's the `DomainEvent` protocol which sp
         func notification() -> NSNotification
     }
 
-##### The `DomainEventPublisher` and its `DomainEventSubscription`
+##### The DomainEventPublisher and its DomainEventSubscription Counterpart
 
 `DomainEventPublisher` is a wrapper around sending `NSNotification` objects through a common `NSNotificationCenter`. The nice thing about this is that you can replace either the `DomainEventPublisher` during unit tests or create per-test `NSNotificationCenter` objects to verify actual event delivery.
 
@@ -480,7 +479,7 @@ To generate a lasting list of log entries, libraries such as [CocoaLumberjack][]
 [cocoalumberjack]: https://github.com/CocoaLumberjack/CocoaLumberjack
 
 
-#### Distribute an Item Successfully: Delegate to `ProvisioningService`
+#### Distribute an Item Successfully: Delegate to ProvisioningService
 
 The failure case was the most interesting so far because it introduced most of the problems. We left the happy path out, though. How does `DistributeItem` take care of creating an `Item`, assigning it to the `Box` that was found, and communicate success?
 
@@ -528,7 +527,7 @@ Now we're done with `DistributeItem` for now. We've delegated item creation to a
 
 [srp]: http://en.wikipedia.org/wiki/Single_responsibility_principle
 
-#### The `ProvisioningService` before and after a huge Model refactoring
+#### The ProvisioningService before and after a huge Model refactoring
 
 Admittedly, I created the `ProvisioningService` earlier than I created `DistributeItem`. I thought I knew what was going to come, so I just wrote it. It was pretty straightforward in the early days:
 
@@ -681,7 +680,7 @@ Multiple connections from client apps to the XPC service will possibly result in
 
 One rather simple trick is to make them sequential. Create a queue for the XPC service which all incoming threads will execute their tasks on. The actual order of tasks cannot be determined, but each task will have to be completed before the next is allowed to start. At least it'll suffice to check for valid state once and rely on it until task completion under these circumstances.
 
-Here's the `ManageItems` Application Service after I added the notion of a simplified ["unit of work"](uow):[^fowler2009peaa]
+Here's the `ManageItems` Application Service after I added the notion of a simplified ["unit of work"][uow]:[^fowler2009peaa]
 
     public class ManageItems {
  
@@ -806,7 +805,7 @@ The pattern seems to work really well in this case. Simple Domain Services just 
 
 Now that we've established and tested the pattern already, let's have a look at what was maybe the hardest Service to model: removing a box and redistributing its items with `DissolveBox`.
 
-### `DissolveBox` Manages Round-Trips through the Domain
+### Manage Round-Trips through the Domain in `DissolveBox`
 
 `DissolveBox` has clear objectives. If the box to be dissolved exists, ...
 
