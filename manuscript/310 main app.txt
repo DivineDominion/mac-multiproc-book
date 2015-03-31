@@ -2,19 +2,25 @@
 
 ## TDD view controllers
 
-I imported most of the code from my book _Exploring Mac App Development Strategies_.
+I imported most of the code for the main app from my book _Exploring Mac App Development Strategies_. That's why you won't see many commits dealing with the initial setup in the [application code repository][code].
 
-In this case, though, the code is much simpler and thus easier to test. Most of the real logic is delegated to another object, the view controller's event handler. The view controller itself cannot even decide whether it should remove an item from the list. Removing items is straightforward, but to remove a non-empty box is a rather involved process in comparison. To find out whether its items can be re-distributed is a concern of the domain. Domain logic should not bleed into the user interface. It shouldn't even reach the Application Layer in between.
+We'll go through the important parts since a lot was rewritten to match the new aims of the application.
 
-* Because the background service distributes items automatically, adding items doesn't involve fetching the currently selected box branch anymore
+Compared to the original code of my older book, the code is much simpler here, and thus easier to test. Most of the real logic is delegated to another object, the view controller's event handler. The view controller itself cannot even decide whether it should remove an item from the list. Removing items is straightforward, but to remove a non-empty box is a rather involved process in comparison. To find out whether its items can be re-distributed is a concern of the domain.
 
-### Embrace delegation even if it means you end up with a lot of objects
+Domain logic should not bleed into the user interface. It shouldn't even reach the Application Layer in between. We take care of the real business rules in the XPC service, not in the apps. Their behavior has to simply match the rules. That's why the user-facing applications are rather top-heavy, with mostly view-related logic.
 
-Whenever I delegate much of the real work from a view controller to a designated event handler object, I wonder if this makes things slower. After all, there's another object to converse with. It has to do something in return and then tell the view controller what to do. Isn't that too many hoops?
+[code]: https://github.com/DivineDominion/mac-multiproc-code
 
-This isn't a performance issue in the end. It's an issue of mental modeling. You know [they say][doorway] that whenever you walk through a doorway, you lose access to part of your memory about what happened in the room you just left? I am afraid of a similar effect in programming: what if I introduce too many collaborating objects and things get worse? What if I won't be able to understand what happens anymore, the code gets fragile, slow, or whatever?
+### Embrace Delegation -- even if that means you end up with a lot of objects
 
-There's tools for that, so I shouldn't worry. Diagrams make it easier to comprehend what the code is doing. 
+Whenever I delegate much of the real work from a view controller to a designated event handler object, I wonder if this makes things slower. After all, there's another object to converse with. It has to do something in return and then tell the view controller what to do. Isn't that too many hops for a simple task?
+
+This isn't a performance issue. It doesn't matter much if you have one object doing 3 things or 3 objects each doing one thing. This is an issue of mental modeling.
+
+You know [they say][doorway] that whenever you walk through a doorway, you lose access to part of your memory about what happened in the room you just left? I am afraid of a similar effect in programming: what if I introduce too many collaborating objects? When I have to jump from one file to another and lose track on the way? When I don't understand what's going on anymore? The code will get fragile, the app will be slow, ... 
+
+Recognize I worry about not understanding things properly. I don't worry about compiler optimization. Clean code should help you understand the solution space in code. And to remedy the problem of getting the big picture: there's tools for that. Diagrams and informal drawings make it easier to comprehend what happens. They help highlight relationships and single out message paths.
 
 [doorway]: http://www.scientificamerican.com/article/why-walking-through-doorway-makes-you-forget/
 

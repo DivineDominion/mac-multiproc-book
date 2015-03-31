@@ -1,4 +1,4 @@
-# Implementing Processes
+# Implementing Parallel Processes
 
 ## Bootstrapping a Multi-Process Xcode Project {#bootstrap}
 
@@ -71,7 +71,7 @@ To make changes take effect after building a new version of the helper, `stop` w
 
 You can automate this with Xcode build scripts to get rid of the helper with every run. This is especially useful for the early development.
 
-## Implement a communication API
+## Implement a Communication API
 
 By now, both app targets should compile. They don't do anything, though. You should be able to invoke the helper application manually, too. Now let's add means to make the main app start the helper if it isn't running.
 
@@ -538,6 +538,7 @@ This is the API for both ways. Now that it is established, the application parts
 In the next part, we're going to actually implement the client apps and the background service using these protocols as means of communication.
 
 ## Dealing with crashes
+
 * Launch Services takes care of restarting the helper
 * add a lock-like token to find out if it crashed or if it was quit on purpose
 * inform the user from the UI processes (background status item, or main app)
