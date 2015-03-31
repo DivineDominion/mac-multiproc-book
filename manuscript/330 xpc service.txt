@@ -206,7 +206,7 @@ What's left is Domain Services to implement the user stories.
 
 The command we will look at is `DistributeItem`. It takes an item's title, creates the item, and puts the new item into a box that can actually hold the item.
 
-On the way, we will take a look at creating Entities. And we'll refactor our core Domain to accommodate a simple fact I overlooked so far: moving items is possible only if an item becomes independent from its box in some cases. It has to be part of another Aggregate, without destroying the old one, though.
+On the way, we will take a look at creating Entities. And we'll refactor our core Domain to accommodate to a simple fact I have overlooked so far: moving items is possible only if an item becomes independent from its box in some cases. It has to be part of another Aggregate, without destroying the old one, though.
 
 But first, let us find out how Domain Services come into play.
 
@@ -284,11 +284,15 @@ Enter the wonderful world of Domain Events and notifications.
 
 #### Introducing (Domain) Events
 
-We can decouple command execution from response handling through events. The benefit to directly sending messages as methods is that we don't have to know the interested parties. Even if in fact only one subscriber exists per message, the benefit of hiding its existence from the sender can be worth the effort. We don't design the sender to accommodate the receiver and increase coupling implicitly.
+We can decouple command execution from response handling through events.
 
-Cocoa spoils us: `NSNotificationCenter` works just great. The only thing you have to take care of is sending a notification of the right `name` with sufficient `userInfo`. This is error-prone, because only in runtime will we find whether we forgot to add an expected key-value-pair to the `userInfo` dictionary. So we will fix that.
+When we send events, we don't have to know the interested parties. That's an advantage over method invocations. Even if in fact only one subscriber exists per message, the benefit of hiding its existence from the sender can be worth the overhead: we won't design the sender to accommodate to the receiver and increase coupling implicitly.
+
+Cocoa spoils us: `NSNotificationCenter` works just great. The only thing you have to take care of is sending a notification of the right `name` with sufficient `userInfo`. This is error-prone, because only in runtime will we find whether we forgot to add an expected key-value-pair to the `userInfo` dictionary. So we will fix that and then we're ready to roll.
 
 We can let the compiler help us in sending events with all necessary data by wrapping notifications in custom data structures, or Value Objects.
+
+
 
 ##### The `ItemDistributionFailed` Event
 
@@ -445,9 +449,11 @@ This is the first use of a Domain Event, so I got into a lot of detail. We will 
 2. add a `DomainEventType` entry for the name and use it from within the new type, of course, and finally
 3. subscribe to the event and keep the subscription around.
 
+Discuss the topic in [a blog post on event publishing][eventpost] I wrote. I'd love to hear what you think!
 
 [publisher]: https://github.com/DivineDominion/mac-multiproc-code/blob/master/RelocationManagerServiceDomain/DomainEventPublisher.swift
 
+[eventpost]: http://christiantietze.de/posts/2015/03/event-publisher/
 
 #### But can't we simply throw exceptions?
 
@@ -472,6 +478,7 @@ Since it's a programmer error, it should be okay to log what happened and move o
 To generate a lasting list of log entries, libraries such as [CocoaLumberjack][] come in handy. We could ask the user to send us the logs from time to time so we can get rid of nasty bugs.
 
 [cocoalumberjack]: https://github.com/CocoaLumberjack/CocoaLumberjack
+
 
 #### Distribute an Item Successfully: Delegate to `ProvisioningService`
 
@@ -740,104 +747,38 @@ Doing it the ugly way once won't break anything, but it may induce a bad tendenc
 
 Compensating is a bit more tricky: Which part of the application will know how to compensate?
 
-Think about the various [flavors of messages][flav] in your code base. There are commands, of which you expect to perform changes. There are queries, which should be strictly side effect-free. There are notifications and events, broadcasting information without expecting any particular reaction.  Notifications are a means to achieve loose coupling between components and consequently cannot expect any reaction.
+Think about the various [flavors of messages][flav] in your code base.
 
-With our distributed application, spread across various processes, it's natural to go for the latter to inform interested parties (other stand-alone parts of the app) about failing operations. Any part can compensate for the failure as long as it listens for the event.
+* There are commands, of which you expect to perform changes. 
+* There are queries, which should be strictly side effect-free. 
+* There are notifications and events, broadcasting information without expecting any particular reaction.
 
-# QQQQQQQQ
+Notifications are a means to achieve loose coupling between components and consequently cannot expect any reaction. With our distributed application, spread across various processes, it's natural to go for them to inform interested parties (other stand-alone parts of the app) about failing operations.
 
-Imagine broadcasting events wasn't the exception.
+Any party can compensate for the failure by its own means as long as it listens for the event.
 
-In this situation, it'll be natural to broadcast an `ItemDistributionDidFail` notification. That's enough to show an alert dialog. If you attach the item data to the event, any receiving party will be able to compensate for the failure:
+Since we adopted Domain Events already, broadcasting events isn't the exception.
 
-The main app receives an `ItemDistributionDidFail` event. It doesn't know which item caused trouble, but it finds a complete item representation attached. It now can display which item did fail. It can ask the user for more boxes. If she agrees to order an additional box, the main app can send the item distribution order again (and consequently forget about the item in question). The XPC service now has plenty of storage and distributes the item. Everyone's happy.
+In this concrete situation, it'll be natural to broadcast an `ItemDistributionDidFail` notification. That's enough to show an alert dialog to the user, for example.
 
-Sending events isn't a matter of seconds or minutes. It's nearly just as fast as sending messages to objects directly. (Of course, there's at least one more hop in between, but that amounts to nothing.)
+If we attach the item data to the event, the main organizer app can compensate for the failure easily:
 
-From a user experience perspective, it doesn't matter whether you couple parts loosely and send events or if you violate the principle of command--query-separation and get feedback immediately. This is all about increased programmer happiness and higher-quality code while the end result should be the same.
+* It receives an `ItemDistributionDidFail` event.
+* It doesn't know which item caused trouble. (Since no item was created, it in fact doesn't make sense to ask for it.) It finds a complete item representation attached to the event, though, so it can display the item information.
+* It can ask the user for more boxes in an alert. If she agrees to order an additional box, the main app can send the item distribution order again afterwards (and consequently forget about the item details from the event).
+* After ordering a new box, the XPC service now has plenty of storage and distributes the item. Everyone's happy.
 
-We split up the app into three autonomous components to make the application maintainable. We should continue to strive for the most robust solution. That's why I will explore the event-based path further.
+Sending events doesn't take seconds or minutes. It's nearly just as fast as sending messages to objects directly. (Of course, there's at least one more hop in between, but that amounts to almost nothing.)
+
+From a user experience perspective, it doesn't matter whether you couple parts loosely and send events or if you violate the principle of command--query-separation to get immediate feedback on commands.
+
+All of this is about increased programmer happiness and higher-quality code.
+
+We split up the app into three autonomous components to make the application maintainable on the macro level. We should continue to strive for the most robust solution on the meso and micro level, too: the former being about object collaboration and messages, the latter about internal structure of objects. That's why I will explore the event-based path further, as a means to optimize the meso level.
 
 [flav]: http://verraes.net/2015/01/messaging-flavours/
 [gojko]: http://gojko.net/2010/06/11/udi-dahan-the-biggest-mistakes-teams-make-when-applying-ddd/
 
-#### Sketching a new Kind of Service to Distribute Items
-
-<!--ct: TODO obsolete since refactoring already took place above-->
-To understand where information about failure could originate, working our way back from bottom to top in the call chain will help:
-
-* `box.addItem(item)` will fail because `box` protects itself against invalid commands. It sends an `AddingItemDidFail` event.
-* The objective of `ProvisioningService.provisionItem` is not fulfilled. Provisioning failed. But the service doesn't notice after it issued the command to `addItem`. No change here.
-* `DistributeItem` receives an `AddingItemDidFail` event. It previously sent off the command to the `ProvisioningService`, so it does care about the success of the operation.
-* `DistributeItem` tries to pick another box with enough capacity in it and issues another round of provisioning. It does this every time an `AddingItemDidFail` event happens until all boxes are filled. Then, it will send an `ItemDistributionDidFail` event with all data attached to re-create a similar item. (Let's assume this is the case to go further up.)
-* The XPC Service notices the `ItemDistributionDidFail` event. It takes the item data and notifies all connected processes.
-* The status bar helper app receives the notification first. Should it care? Users can add items from within the helper window after all.
-* The main app receives the notification. It responds with an alert dialog to ask the user for intervention.
-
-Now what if the user's action didn't originate in the main app? What if the main app isn't even running? 
-
-<!--ct: TODO will it suffice to notify only one party?-->
-
-    public class DistributeItem {
-        var eventPublisher: DomainEventPublisher {
-            return DomainEventPublisher.sharedInstance
-        }
-    
-        public init() { }
-    
-        public func distribute(itemTitle title: String, provisioningService: ProvisioningService, boxRepository repository: BoxRepository) {
-        
-            if let box = boxes(fromRepository: repository).first {
-                provisioningService.provisionItem(title, inBox: box)
-                return
-            }
-        
-            eventPublisher.publish(BoxItemDistributionFailed(itemTitle: title))
-        }
-    
-        func boxes(fromRepository repository: BoxRepository) -> [Box] {
-            return repository.boxes().filter { box in
-                return box.canTakeItem()
-            }.sorted { (one, other) -> Bool in
-                    return one.itemsCount < other.itemsCount
-            }
-        }
-    }
-    
-    public class ManageItems {
-    
-        var eventPublisher: DomainEventPublisher {
-            return DomainEventPublisher.sharedInstance
-        }
-    
-        public lazy var repository: BoxRepository = ServiceLocator.boxRepository()
-        public lazy var provisioningService: ProvisioningService = ProvisioningService(repository: self.repository)
-        public lazy var distributionService = DistributeItem()
-    
-        public init() {
-            self.subscribeToBoxItemAddingFailed()
-        }
-    
-        var addingBoxItemFailedSubscriber: DomainEventSubscriber!
-    
-        func subscribeToBoxItemAddingFailed() {
-            // If adding failed, simply re-try distribution.
-            // Assumes DistributeItem doesn't try if there's no room.
-            addingBoxItemFailedSubscriber = eventPublisher.subscribe(AddingBoxItemFailed.self) {
-                [unowned self] event in
-            
-                self.distributeItem(event.itemTitle)
-            }
-        }
-    
-        public func distributeItem(title: String) {
-            distributionService.distribute(itemTitle: title, provisioningService: provisioningService, boxRepository: repository)
-        }
-    
-        public func removeItem(itemIdentifier: IntegerId, fromBoxIdentifier boxIdentifier: IntegerId) {
-        
-        }
-    }
 
 ### Taking a Look at the Simple `RemoveItem` Domain Service
 
