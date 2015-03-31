@@ -86,12 +86,12 @@ According to one accompanying convention of the "East-Oriented Code" principle, 
 > 2. Objects that implement the Factory or Builder pattern or similar are an exception.
 > 3. East is better suited to composite objects, not primitive objects.
 
-You don't have to make your code chainable, of course. If returning `self` causes problems or breaks your tests, though, your code isn't ready for focussing on a command-centric approach. This should become a driver of change towards useful refactorings.
+You don't have to make your code chainable, of course. If returning `self` causes problems or breaks your tests, though, your code isn't ready for focussing on a command-centric approach. This should become a driver of change towards useful refactoring.
 
 ## Domain Model
 
 * avoid public setters to set up an object
-    * you could set only half of the necessary attributes, or none at all, and had to check before use everytime
+    * you could set only half of the necessary attributes, or none at all, and had to check before use every time
     * consequently, don't manipulate array attributes directly, but expose methods which limit how much the developer can do with it
     * promiscuous objects
     * instead, use a constructor which protects invariants

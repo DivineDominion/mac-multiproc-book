@@ -18,7 +18,7 @@ If you didn't shell out the bucks to get a license to code for Mac (yet), simply
 
 Create a new Xcode project and pick OS X "Cocoa Application". I use Swift and Core Data but no Storyboards.
 
-Add an XPC Service target right afterwards. You find them under "Frameworks & Library" in the OS X group as of Xcode 6. We'll have to costimize the XPC Service target because nowadays it seems to work differently than people were used to. Call the future Launch Agent "Helper". We'll modify the names soon enough to make sense.
+Add an XPC Service target right afterwards. You find them under "Frameworks & Library" in the OS X group as of Xcode 6. We'll have to customize the XPC Service target because nowadays it seems to work differently than people were used to. Call the future Launch Agent "Helper". We'll modify the names soon enough to make sense.
 
 ![Add the Helper Target](images/201501201656_create-helper-target.png)
 
@@ -49,7 +49,7 @@ Launch Agents have to be placed in the `.app` bundle's `Contents/Library/LoginIt
 
 * Search for "Product Name" in the Helper's build settings tab and set it to `<team-id>.<bundle-name>`. In my case, this is: `FRMDA3XRGC.de.christiantietze.multiproc.Helper`.
 * Change the value of the "Wrapper Name" build setting to "app" instead of "xpc". Although the docs say Launch Agents may not end with `.app`, it didn't work for me.
-* Modify the XPC Sercvice's `.plist`: replace the value of "Bundle Identifier" with `$(PRODUCT_NAME)` only, no RFC escaping, no organization prefix. The RFC-escaped version would replace the bundle identifier's delimiting periods with dashes. That'd not be good.
+* Modify the XPC Service's `.plist`: replace the value of "Bundle Identifier" with `$(PRODUCT_NAME)` only, no RFC escaping, no organization prefix. The RFC-escaped version would replace the bundle identifier's delimiting periods with dashes. That'd not be good.
 * Delete "Embed XPC Service" build phase. We're not just splitting an app into XPC components but want to create a Launch Agent and need to meet other criteria.
 * Add a copy file build phase. Destination: "Wrapper". Subpath: "Contents/Library/LoginItems". Drag and drop the helper target's product alias in there. (You find build products to your left in the Standard Editor's "related files" section below the "Products" group.)
 
@@ -444,7 +444,7 @@ We've already got to know `invalidationHandler` in the last example. This callba
 
 For the other side of the connection, there's also an `interruptionHandler` property, which you will need for the client app. If you shutdown the XPC service while the connection is open, the connection won't be invalidated. It will merely be interrupted.
 
-The applicatian can recover from interruptions. Recall that `launchd` manages XPC service lifecycles and takes care for re-launching crashed services. You can use the existing connection to perform additional queries.
+The application can recover from interruptions. Recall that `launchd` manages XPC service life-cycles and takes care for re-launching crashed services. You can use the existing connection to perform additional queries.
 
 From [the docs][errordoc]:
 
@@ -480,13 +480,13 @@ When you get started with developing the processes, it's going to get on your ne
 
 This is not what you are going to want later on, but it'll suffice to get past the initial trouble. To restart or shut down the helper manually, you can create an Automator service to execute this script and add a shortcut to it. Or use a script launcher like Keyboard Maestro.
 
-By all means: do yourself a favor and don't use the Terminal directly everytime.
+By all means: do yourself a favor and don't use the Terminal directly every time.
 
 ## Testing XPC Calls: Define Adapters
 
 So far, we've tested the XPC connection by starting both the background service and a client app. This is cumbersome, and it's hard to automate.
 
-Now that we've gained confidence in the project's principal setup, we can step back and stop with these learning tests. We've learned how XPC connections basically work. Now we're ready to develop the application itself. To do so, we'll make use of automatted tests.
+Now that we've gained confidence in the project's principal setup, we can step back and stop with these learning tests. We've learned how XPC connections basically work. Now we're ready to develop the application itself. To do so, we'll make use of automated tests.
 
 Testing an XPC connection is no different from testing user interaction in view controllers.
 

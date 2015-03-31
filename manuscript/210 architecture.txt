@@ -15,7 +15,7 @@ Pro
 :   the super-simple Entities allow for similar representation
 
 Con
-:   apps don't have direct write-acceess to the domain and shouldn't be fooled otherwise: we need a read-only model for the user-facing apps
+:   apps don't have direct write-access to the domain and shouldn't be fooled otherwise: we need a read-only model for the user-facing apps
 
 <!--ct: TODO make table of this comparison-->
 
@@ -28,7 +28,7 @@ Con
 
 ### Don't expect immediate responses
 
-* calls accross the XPC connection should be non-blocking
+* calls across the XPC connection should be non-blocking
     * the app should stay responsive to user interaction
     * the helper should stay responsive to further requests
 * favor commands and react to callbacks, taking a delay into account
