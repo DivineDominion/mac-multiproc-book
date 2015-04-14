@@ -309,8 +309,8 @@ Here's my take on the failure event, `ItemDistributionFailed`, as a template for
         }
     
         public init(userInfo: UserInfo) {
-            let itemData = userInfo["item"] as UserInfo
-            let itemTitle = itemData["title"] as String
+            let itemData = userInfo["item"] as! UserInfo
+            let itemTitle = itemData["title"] as! String
         
             self.init(itemTitle: itemTitle)
         }
